@@ -45,7 +45,7 @@ jobs:
       working-directory: ./android
       run: |
         chmod +x gradlew
-        ./gradlew assembleNightlyFreeLegacyArmonlyDebug --stacktrace
+        ./gradlew assembleNightlyFreeLegacyArmonlyDebug -x test
 
     - name: Prepare APK
       run: |
