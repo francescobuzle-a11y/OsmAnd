@@ -80,7 +80,7 @@ shot 04_mappa; texts mappa
 
 # 4) search screen
 tap_text "cerca|search" 228 157; sleep 6; shot 05_ricerca; texts ricerca
-adb shell input keyevent 4; sleep 3
+adb shell input keyevent 4; sleep 2; adb shell input keyevent 4; sleep 3
 
 # 4b) main menu (essential items only)
 tap_text "menu" 90 2130; sleep 3; shot 05b_menu; texts menu
@@ -94,6 +94,7 @@ tap_text "mantieni attivo|keep active"; sleep 3
 shot 06_navigazione; texts navigazione
 for i in 1 2 3 4 5 6; do adb emu geo fix 12.47$((9-i)) 43.96$((7-i)); sleep 2; done
 sleep 4; shot 07_navigazione_in_movimento
+tap 816 1557; sleep 5; adb emu geo fix 12.4730 43.9610; sleep 4; shot 07b_vista_3d   # 2D/3D button
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4740 43.9630; sleep 6; shot 08_navigazione_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
