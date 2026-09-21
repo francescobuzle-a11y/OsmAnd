@@ -117,13 +117,17 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		}
 		try {
 			RoutingHelper rh = app.getRoutingHelper();
-			if (!rh.isFollowingMode() || !rh.isRouteCalculated()) {
-				return;
-			}
 			boolean night = settings != null && settings.isNightMode();
 			int w = canvas.getWidth();
 			int h = canvas.getHeight();
 			boolean landscape = w > h;
+			boolean navigating = rh.isFollowingMode() && rh.isRouteCalculated();
+			if (!navigating) {
+				return;
+			}
+			if (nmRoadMode(app.getSettings().getApplicationMode())) {
+				drawDataBar(canvas, w, h, rh, night);
+			}
 			float top = topOffset(h);
 			String demo = demoName();
 
@@ -541,6 +545,97 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			}
 		});
 		return null;
+	}
+
+	// ---------------------------------------------------------------- Garmin-style data bar
+
+	private static boolean nmRoadMode(ApplicationMode m) {
+		return m == ApplicationMode.CAR || m == ApplicationMode.TRUCK
+				|| m.getParent() == ApplicationMode.CAR || m.getParent() == ApplicationMode.TRUCK;
+	}
+
+	private float bottomLimit(int h) {
+		MapActivity activity = getMapActivity();
+		if (activity != null) {
+			View bottom = activity.findViewById(R.id.map_bottom_widgets_panel);
+			if (bottom != null && bottom.getVisibility() == View.VISIBLE && bottom.getHeight() > 0) {
+				int[] loc = new int[2];
+				bottom.getLocationInWindow(loc);
+				int[] mapLoc = new int[2];
+				if (view != null) {
+					view.getLocationInWindow(mapLoc);
+				}
+				return loc[1] - mapLoc[1] - 6 * dp;
+			}
+		}
+		return h - 6 * dp;
+	}
+
+	private void drawDataBar(Canvas c, int w, int h, RoutingHelper rh, boolean night) {
+		// sits right of OsmAnd's speedometer (speed + limit), like the data fields of a truck navigator
+		boolean it = italian();
+		int cells = 3;
+		float bottom = bottomLimit(h);
+		float barH = 58 * dp;
+		float left = 74 * dp;
+		float cellW = Math.min(112 * dp, (w - 96 * dp - left) / cells);
+		RectF bar = new RectF(left, bottom - barH, left + cellW * cells, bottom);
+		fill.setStyle(Paint.Style.FILL);
+		fill.setColor(0x55000000);
+		c.drawRoundRect(new RectF(bar.left + 2 * dp, bar.top + 3 * dp, bar.right + 2 * dp, bar.bottom + 3 * dp), 8 * dp, 8 * dp, fill);
+		fill.setColor(night ? 0xFF22262B : Color.WHITE);
+		c.drawRoundRect(bar, 8 * dp, 8 * dp, fill);
+		String[][] data = new String[cells][];
+		int leftS = rh.getLeftTime();
+		String tt;
+		String tu;
+		if (leftS >= 3600) {
+			tt = (leftS / 3600) + ":" + String.format(Locale.US, "%02d", (leftS % 3600) / 60);
+			tu = "h";
+		} else {
+			tt = String.valueOf(Math.max(0, leftS / 60));
+			tu = "min";
+		}
+		data[0] = new String[]{tt, tu, it ? "Arrivo tra" : "Arrive in"};
+		net.osmand.plus.utils.FormattedValue d = OsmAndFormatter.getFormattedDistanceValue(rh.getLeftDistance(), app);
+		data[1] = new String[]{d.value, d.unit, it ? "Distanza" : "Distance"};
+		String eta = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(System.currentTimeMillis() + leftS * 1000L));
+		data[2] = new String[]{eta, "", it ? "Arrivo" : "Arrival"};
+		for (int i = 0; i < cells; i++) {
+			float cx0 = bar.left + i * cellW;
+			if (i > 0) {
+				stroke.setColor(night ? 0xFF3A4048 : 0xFFD6D9DD);
+				stroke.setStrokeWidth(1.2f * dp);
+				c.drawLine(cx0, bar.top + 9 * dp, cx0, bar.bottom - 9 * dp, stroke);
+			}
+			String value = data[i][0];
+			String unit = data[i][1];
+			float vs = 26 * dp;
+			text.setTextSize(vs);
+			float us = 12 * dp;
+			Paint up = new Paint(text);
+			up.setTextAlign(Paint.Align.LEFT);
+			up.setTextSize(us);
+			float total = text.measureText(value) + (unit.isEmpty() ? 0 : 3 * dp + up.measureText(unit));
+			while (total > cellW - 10 * dp && vs > 14 * dp) {
+				vs -= dp;
+				text.setTextSize(vs);
+				total = text.measureText(value) + (unit.isEmpty() ? 0 : 3 * dp + up.measureText(unit));
+			}
+			float x = cx0 + (cellW - total) / 2f;
+			float base = bar.top + 32 * dp;
+			text.setTextAlign(Paint.Align.LEFT);
+			text.setColor(night ? Color.WHITE : 0xFF15181C);
+			c.drawText(value, x, base, text);
+			if (!unit.isEmpty()) {
+				up.setColor(night ? 0xFFB0B6BE : 0xFF4A5058);
+				c.drawText(unit, x + text.measureText(value) + 3 * dp, base, up);
+			}
+			up.setTextAlign(Paint.Align.CENTER);
+			up.setTextSize(11 * dp);
+			up.setColor(night ? 0xFF9AA3AD : 0xFF5F6670);
+			c.drawText(data[i][2], cx0 + cellW / 2f, bar.bottom - 9 * dp, up);
+		}
 	}
 
 	// ---------------------------------------------------------------- buttons
