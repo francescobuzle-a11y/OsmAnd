@@ -412,6 +412,22 @@ patch(os.path.join(O, 'build.gradle'), 'signingConfig signingConfigs.publishing'
 # 14) 3D perspective map by default (tilted camera like Waze/iGO; OpenGL engine)
 patch(os.path.join(S, 'settings', 'backend', 'OsmandSettings.java'),
       '"last_known_map_elevation", 90)', '"last_known_map_elevation", 50)')
+# 15) Essential drawer menu for drivers: Search, Directions, Maps, Map/Screen config, Settings. Everything else hidden.
+dm = os.path.join(S, 'settings', 'backend', 'menuitems', 'DrawerMenuItemsSettings.java')
+patch(dm, '\t\thiddenByDefault.add(DRAWER_VEHICLE_METRICS_ID);\n',
+      '\t\thiddenByDefault.add(DRAWER_VEHICLE_METRICS_ID);\n'
+      '\t\t// NavMaster: essential menu for truck/camper/bus/car drivers\n'
+      '\t\thiddenByDefault.add(DRAWER_SALE_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_MAP_MARKERS_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_TRIP_RECORDING_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_TRAVEL_GUIDES_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_MEASURE_DISTANCE_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_WEATHER_FORECAST_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_PLUGINS_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_HELP_ID);\n'
+      '\t\thiddenByDefault.add(DRAWER_BUILDS_ID);\n')
+# 16) Only road-vehicle profiles: truck and car (camper/bus profiles come as truck-based custom profiles)
+patch(st, '"available_application_modes", "truck,car,bicycle,pedestrian,"', '"available_application_modes", "truck,car,"')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
