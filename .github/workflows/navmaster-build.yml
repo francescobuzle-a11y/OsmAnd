@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: navmaster-build
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,11 +45,11 @@ jobs:
       working-directory: ./android
       run: printf "\norg.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8\n" >> gradle.properties
 
-    - name: Build (nightlyFree, legacy, arm32+arm64, debug)
+    - name: Build (nightlyFree, legacy, all ABIs incl. x86_64 for emulator, debug)
       working-directory: ./android
       run: |
         chmod +x gradlew
-        ./gradlew assembleNightlyFreeLegacyArmonlyDebug -x test
+        ./gradlew assembleNightlyFreeLegacyFatDebug -x test
 
     - name: Prepare APK
       run: |
@@ -53,6 +57,25 @@ jobs:
         f=$(find android/OsmAnd/build/outputs/apk -name '*.apk' | head -1)
         cp "$f" out/NavMaster-${{ github.run_number }}.apk
         ls -la out
+
+    - name: Enable KVM (emulator)
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Preview on Android emulator (screenshots)
+      continue-on-error: true
+      timeout-minutes: 25
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 30
+        target: google_apis
+        arch: x86_64
+        profile: pixel_4
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+        script: bash android/navmaster/preview.sh out/NavMaster-${{ github.run_number }}.apk shots
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -66,5 +89,7 @@ jobs:
       with:
         tag_name: build-${{ github.run_number }}
         name: NavMaster build ${{ github.run_number }}
-        files: out/*.apk
+        files: |
+          out/*.apk
+          shots/*.png
         make_latest: true
