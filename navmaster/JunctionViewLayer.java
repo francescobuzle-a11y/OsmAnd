@@ -144,9 +144,18 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		if (now - lastDemoCheck > 5000) {
 			lastDemoCheck = now;
 			File dir = app.getAppPath(null);
-			demo = dir != null && new File(dir, DEMO_FILE).exists();
+			demo = (dir != null && new File(dir, DEMO_FILE).exists()) || "1".equals(sysProp("debug.navmaster.jv"));
 		}
 		return demo;
+	}
+
+	private static String sysProp(String key) {
+		try {
+			Class<?> c = Class.forName("android.os.SystemProperties");
+			return (String) c.getMethod("get", String.class).invoke(null, key);
+		} catch (Throwable e) {
+			return "";
+		}
 	}
 
 	private Junction demoJunction() {
