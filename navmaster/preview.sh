@@ -112,6 +112,7 @@ adb shell setprop debug.navmaster.jv 0
 adb shell input keyevent 3; sleep 2
 adb shell input swipe 540 1800 540 400 300; sleep 3; shot 09_icona_app
 adb logcat -d -t 3000 > "$OUT/logcat.txt" || true
+adb shell "ls -la /data/anr; for f in /data/anr/*; do echo == \$f; head -c 60000 \$f; done" > "$OUT/anr.txt" 2>&1 || true
 adb logcat -d | grep -i "NavMasterJV" > "$OUT/navmaster_log.txt" || true
 cp "$INFO" "$OUT/preview_info.txt" 2>/dev/null || true
 ls -la "$OUT"
