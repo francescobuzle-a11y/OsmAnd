@@ -84,7 +84,8 @@ adb shell input keyevent 4; sleep 2; adb shell input keyevent 4; sleep 3
 
 # 4b) main menu (essential items only)
 tap_text "menu" 90 2130; sleep 3; shot 05b_menu; texts menu
-adb shell input keyevent 4; sleep 2
+tap 400 150; sleep 3; shot 05c_profili; texts profili   # profile list (Camion, Auto, Camper, Bus)
+adb shell input keyevent 4; sleep 2; adb shell input keyevent 4; sleep 2
 
 # 5) truck navigation
 view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=San%20Marino&profile=truck&force=true"
@@ -94,7 +95,7 @@ tap_text "mantieni attivo|keep active"; sleep 3
 shot 06_navigazione; texts navigazione
 for i in 1 2 3 4 5 6; do adb emu geo fix 12.47$((9-i)) 43.96$((7-i)); sleep 2; done
 sleep 4; shot 07_navigazione_in_movimento
-tap 816 1557; sleep 5; adb emu geo fix 12.4730 43.9610; sleep 4; shot 07b_vista_3d   # 2D/3D button
+tap 816 1659; sleep 5; adb emu geo fix 12.4730 43.9610; sleep 4; shot 07b_vista_3d   # 2D/3D button
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4740 43.9630; sleep 6; shot 08_navigazione_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
@@ -112,6 +113,18 @@ adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4700 
 adb shell settings put system user_rotation 0; sleep 3
 adb shell rm -f /sdcard/Android/data/$PKG/files/navmaster_junction_demo
 adb shell setprop debug.navmaster.jv 0
+
+# 5c) arrival panel with satellite view + restriction banner (sample data)
+view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=43.9640&dest_lon=12.4760&dest_name=NAVMASTER_ARRIVO&profile=truck&force=true"
+sleep 10
+tap_text "mantieni attivo|keep active"; sleep 2
+for i in 1 2 3; do adb emu geo fix 12.4785 43.9665; sleep 3; done
+sleep 8; shot 12_arrivo_satellite
+tap 107 1077; sleep 3; shot 14_segnala; texts segnala   # "Segnala" button -> report types
+adb shell input keyevent 4; sleep 2
+adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4780 43.9660; sleep 10; shot 13_arrivo_orizzontale
+adb shell settings put system user_rotation 0; sleep 3
+adb logcat -d | grep -i "NavMasterDL\|NavMaster:" > "$OUT/navmaster_driver_log.txt" || true
 
 # 6) launcher icon
 adb shell input keyevent 3; sleep 2
