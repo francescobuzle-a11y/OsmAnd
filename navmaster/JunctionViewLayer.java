@@ -117,7 +117,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		if (landscape) {
 			panel = new RectF(w * 0.50f, top, w - margin, Math.min(h * 0.80f, top + (w * 0.5f - margin) * 0.66f));
 		} else {
-			float ph = Math.min(w * 0.62f, h * 0.36f);
+			// portrait: below the first row of map buttons and the speed widget
+			top += 64 * dp;
+			float ph = Math.min(w * 0.60f, h * 0.34f);
 			panel = new RectF(margin, top, w - margin, top + ph);
 		}
 		if (now - lastLog < 50) {
@@ -457,7 +459,8 @@ public class JunctionViewLayer extends OsmandMapLayer {
 
 		float y = sign.top + pad;
 		if (!Algorithms.isEmpty(j.exitRef)) {
-			String label = app.getString(R.string.shared_string_exit) + " " + j.exitRef;
+			String exitWord = "it".equals(java.util.Locale.getDefault().getLanguage()) ? "Uscita" : app.getString(R.string.shared_string_exit);
+			String label = exitWord + " " + j.exitRef;
 			text.setTextSize(textSize * 0.8f);
 			float tw = text.measureText(label) + 10 * dp;
 			RectF chip = new RectF(inner.right - tw - 4 * dp, y - 2 * dp, inner.right - 4 * dp, y + lineH * 0.8f);
