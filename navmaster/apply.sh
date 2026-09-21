@@ -462,6 +462,49 @@ patch(bgp, '\tdefaultConfig {\n\t\tminSdkVersion osmand_minSdk\n',
 patch(bgp, '\tlintOptions {\n\t\tlintConfig file("lint.xml")\n',
       '\tpackagingOptions {\n\t\tjniLibs {\n\t\t\tuseLegacyPackaging = true\n\t\t}\n\t}\n\n'
       '\tlintOptions {\n\t\tlintConfig file("lint.xml")\n')
+# 19) Ready-made Camper and Bus profiles (truck routing, typical dimensions), created once on first start
+am = os.path.join(S, 'settings', 'backend', 'ApplicationMode.java')
+patch(am, '\t\tinitCustomModes(app);\n\t\tinitModesParams(app);\n',
+      '\t\tinitCustomModes(app);\n\t\tinitModesParams(app);\n'
+      '\t\ttry {\n\t\t\tnmCreateDriverProfiles(app);\n\t\t} catch (Exception e) {\n\t\t\tandroid.util.Log.e("NavMaster", "driver profiles", e);\n\t\t}\n')
+patch(am, '\tprivate static void initModesParams(@NonNull OsmandApplication app) {\n',
+      '\t// NavMaster: Camper and Bus profiles derived from Truck (same routing, restrictions and alerts)\n'
+      '\tprivate static void nmCreateDriverProfiles(@NonNull OsmandApplication app) {\n'
+      '\t\tOsmandSettings settings = app.getSettings();\n'
+      '\t\tnet.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> done =\n'
+      '\t\t\t\tsettings.registerBooleanPreference("nm_driver_profiles_v1", false).makeGlobal();\n'
+      '\t\tif (done.get()) {\n\t\t\treturn;\n\t\t}\n'
+      '\t\tnmCreateProfile(app, "nm_camper", "Camper", "ic_action_camper", ProfileIconColors.GREEN, "3.2", "3.5", "7.5", "2.3");\n'
+      '\t\tnmCreateProfile(app, "nm_bus", "Bus", "ic_action_bus_dark", ProfileIconColors.DARK_YELLOW, "3.8", "18", "12", "2.55");\n'
+      '\t\tdone.set(true);\n'
+      '\t}\n\n'
+      '\tprivate static void nmCreateProfile(@NonNull OsmandApplication app, String key, String name, String icon,\n'
+      '\t\t\tProfileIconColors color, String height, String weight, String length, String width) {\n'
+      '\t\tif (valueOfStringKey(key, null) != null) {\n\t\t\treturn;\n\t\t}\n'
+      '\t\tApplicationModeBuilder builder = createCustomMode(TRUCK, key, app)\n'
+      '\t\t\t\t.setUserProfileName(name)\n'
+      '\t\t\t\t.setIconResName(icon)\n'
+      '\t\t\t\t.setIconColor(color)\n'
+      '\t\t\t\t.setRouteService(RouteService.OSMAND)\n'
+      '\t\t\t\t.setRoutingProfile(app.getSettings().ROUTING_PROFILE.getModeValue(TRUCK));\n'
+      '\t\tApplicationMode mode = saveProfile(builder, app);\n'
+      '\t\tmode.setDerivedProfile(app.getSettings().DERIVED_PROFILE.getModeValue(TRUCK));\n'
+      '\t\tOsmandSettings settings = app.getSettings();\n'
+      '\t\tsettings.getCustomRoutingProperty("height", "0").setModeValue(mode, height);\n'
+      '\t\tsettings.getCustomRoutingProperty("weight", "0").setModeValue(mode, weight);\n'
+      '\t\tsettings.getCustomRoutingProperty("length", "0").setModeValue(mode, length);\n'
+      '\t\tsettings.getCustomRoutingProperty("width", "0").setModeValue(mode, width);\n'
+      '\t\tchangeProfileAvailability(mode, true, app);\n'
+      '\t}\n\n'
+      '\tprivate static void initModesParams(@NonNull OsmandApplication app) {\n')
+# 20) Driver layer: restriction banner, satellite "Arrivo" panel, Segnala / POI buttons in navigation
+shutil.copy(os.path.join(A, 'navmaster', 'NavMasterDriverLayer.java'), os.path.join(S, 'views', 'layers', 'NavMasterDriverLayer.java'))
+patch(os.path.join(S, 'views', 'MapLayers.java'), 'mapView.addLayer(new net.osmand.plus.views.layers.JunctionViewLayer(app), 9.5f);',
+      'mapView.addLayer(new net.osmand.plus.views.layers.JunctionViewLayer(app), 9.5f);\n\t\tmapView.addLayer(new net.osmand.plus.views.layers.NavMasterDriverLayer(app), 9.6f);')
+# 21) Reports saved as favourites are announced along the route (truck and derived profiles)
+patch(st, '\tpublic final OsmandPreference<Boolean> SHOW_NEARBY_POI = new BooleanPreference(this, "show_nearby_poi", false).makeProfile().cache();\n',
+      '\tpublic final OsmandPreference<Boolean> SHOW_NEARBY_POI = new BooleanPreference(this, "show_nearby_poi", false).makeProfile().cache();\n\n'
+      '\t{\n\t\t((CommonPreference<Boolean>) SHOW_NEARBY_FAVORITES).setModeDefaultValue(ApplicationMode.TRUCK, true);\n\t}\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
