@@ -55,21 +55,34 @@ jobs:
       working-directory: ./android
       run: printf "\norg.gradle.jvmargs=-Xmx10g -Dfile.encoding=UTF-8\n" >> gradle.properties
 
-    - name: Build release (OpenGL, ARM for devices + x86 for the emulator preview)
+    - name: Build release (OpenGL, ARM64 for devices + x86 for the emulator preview)
       working-directory: ./android
       run: |
         chmod +x gradlew
-        ./gradlew assembleNightlyFreeOpenglArmonlyRelease assembleNightlyFreeOpenglX86Release -x test
+        ./gradlew assembleNightlyFreeOpenglArm64Release assembleNightlyFreeOpenglX86Release -x test
+        ./gradlew --stop || true
 
     - name: Prepare APK
       run: |
         mkdir -p out
         find android/OsmAnd/build/outputs/apk -name '*.apk' -exec ls -la {} \;
-        arm=$(find android/OsmAnd/build/outputs/apk -path '*Armonly*' -name '*.apk' -o -path '*armonly*' -name '*.apk' | head -1)
+        arm=$(find android/OsmAnd/build/outputs/apk -path '*Arm64*' -name '*.apk' -o -path '*arm64*' -name '*.apk' | head -1)
         x86=$(find android/OsmAnd/build/outputs/apk -path '*X86*' -name '*.apk' -o -path '*x86*' -name '*.apk' | head -1)
         cp "$arm" out/NavMaster-${{ github.run_number }}.apk
         cp "$x86" preview-x86.apk
         ls -la out preview-x86.apk
+        # free RAM/disk for the emulator
+        rm -rf android/OsmAnd/build/intermediates ~/.gradle/caches/transforms-* || true
+        pkill -f GradleDaemon || true
+        free -m; df -h .
+
+    - name: Publish release (direct .apk download)
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: NavMaster build ${{ github.run_number }}
+        files: out/*.apk
+        make_latest: true
 
     - name: Enable KVM (emulator)
       run: |
@@ -87,16 +100,15 @@ jobs:
         arch: x86_64
         profile: pixel_4
         disable-animations: true
+        ram-size: 3072M
         emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
         script: bash android/navmaster/preview.sh preview-x86.apk shots
 
-    - name: Publish release (direct .apk download)
+    - name: Add preview screenshots to the release
+      if: always()
       uses: softprops/action-gh-release@v2
       with:
         tag_name: build-${{ github.run_number }}
-        name: NavMaster build ${{ github.run_number }}
         files: |
-          out/*.apk
           shots/*.png
           shots/*.txt
-        make_latest: true
