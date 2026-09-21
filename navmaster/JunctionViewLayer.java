@@ -46,6 +46,10 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	private static final int SIGN_BLUE = 0xFF1F5FB4;
 	private static final int EXIT_YELLOW = 0xFFFFD23F;
 
+	// shared with NavMasterDriverLayer: when the junction panel was last drawn and where it ends
+	public static volatile long nmPanelShownAt;
+	public static volatile float nmPanelBottom;
+
 	private OsmandApplication app;
 	private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
 	private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -126,6 +130,8 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		if (now - lastLog < 50) {
 			Log.i("NavMasterJV", "panel=" + panel);
 		}
+		nmPanelShownAt = now;
+		nmPanelBottom = panel.bottom;
 		drawPanel(canvas, panel, j, night);
 	}
 
