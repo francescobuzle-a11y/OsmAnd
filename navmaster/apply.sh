@@ -407,6 +407,11 @@ patch(st, '\t\tROTATE_MAP.setModeDefaultValue(ApplicationMode.PEDESTRIAN, ROTATE
       '\t\t((CommonPreference<Boolean>) SHOW_CAMERAS).setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
       '\t\tSHOW_SPEED_LIMIT_WARNINGS.setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
       '\t\tNAVIGATION_ICON.setModeDefaultValue(ApplicationMode.TRUCK, LocationIcon.MOVEMENT_CAR.name());\n')
+# 13) Optimized release build signed with the repo key (same key as before, so updates install over old builds)
+patch(os.path.join(O, 'build.gradle'), 'signingConfig signingConfigs.publishing', 'signingConfig signingConfigs.development')
+# 14) 3D perspective map by default (tilted camera like Waze/iGO; OpenGL engine)
+patch(os.path.join(S, 'settings', 'backend', 'OsmandSettings.java'),
+      '"last_known_map_elevation", 90)', '"last_known_map_elevation", 50)')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
