@@ -9,6 +9,7 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.util.Log;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -52,6 +53,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	private final Path path = new Path();
 	private float dp;
 	private long lastDemoCheck;
+	private long lastLog;
 	private boolean demo;
 
 	public JunctionViewLayer(@NonNull Context ctx) {
@@ -83,10 +85,25 @@ public class JunctionViewLayer extends OsmandMapLayer {
 
 	@Override
 	public void onDraw(Canvas canvas, RotatedTileBox tileBox, DrawSettings settings) {
+		try {
+			drawJunction(canvas, settings);
+		} catch (Throwable e) {
+			Log.e("NavMasterJV", "draw failed", e);
+		}
+	}
+
+	private void drawJunction(Canvas canvas, DrawSettings settings) {
 		if (app == null) {
 			return;
 		}
-		Junction j = demoMode() ? demoJunction() : currentJunction();
+		boolean demoNow = demoMode();
+		Junction j = demoNow ? demoJunction() : currentJunction();
+		long now = System.currentTimeMillis();
+		if (now - lastLog > 4000) {
+			lastLog = now;
+			Log.i("NavMasterJV", "onDraw canvas=" + canvas.getWidth() + "x" + canvas.getHeight()
+					+ " demo=" + demoNow + " junction=" + (j != null) + " dir=" + app.getAppPath(null));
+		}
 		if (j == null) {
 			return;
 		}
@@ -102,6 +119,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		} else {
 			float ph = Math.min(w * 0.62f, h * 0.36f);
 			panel = new RectF(margin, top, w - margin, top + ph);
+		}
+		if (now - lastLog < 50) {
+			Log.i("NavMasterJV", "panel=" + panel);
 		}
 		drawPanel(canvas, panel, j, night);
 	}
