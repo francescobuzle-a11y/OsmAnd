@@ -505,6 +505,11 @@ patch(os.path.join(S, 'views', 'MapLayers.java'), 'mapView.addLayer(new net.osma
 patch(st, '\tpublic final OsmandPreference<Boolean> SHOW_NEARBY_POI = new BooleanPreference(this, "show_nearby_poi", false).makeProfile().cache();\n',
       '\tpublic final OsmandPreference<Boolean> SHOW_NEARBY_POI = new BooleanPreference(this, "show_nearby_poi", false).makeProfile().cache();\n\n'
       '\t{\n\t\t((CommonPreference<Boolean>) SHOW_NEARBY_FAVORITES).setModeDefaultValue(ApplicationMode.TRUCK, true);\n\t}\n')
+# 22) Road profiles: NavMaster data bar (arrive in / distance / arrival) replaces the route info bar
+wa = os.path.join(S, 'settings', 'backend', 'WidgetsAvailabilityHelper.java')
+patch(wa, '\t\t\tregWidgetVisibility(ROUTE_INFO, exceptDefault);\n',
+      '\t\t\tregWidgetVisibility(ROUTE_INFO, exceptDefault).removeIf(m -> m == CAR || m == TRUCK\n'
+      '\t\t\t\t\t|| m.getParent() == CAR || m.getParent() == TRUCK);\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
