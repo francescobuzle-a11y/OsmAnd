@@ -388,6 +388,15 @@ patch(st, '"available_application_modes", "car,bicycle,pedestrian,public_transpo
       '"available_application_modes", "truck,car,bicycle,pedestrian,"')
 patch(st, 'new CommonPreference<ApplicationMode>(this, "default_application_mode_string", ApplicationMode.DEFAULT)',
       'new CommonPreference<ApplicationMode>(this, "default_application_mode_string", ApplicationMode.TRUCK)')
+# 8) Small in-app logo (welcome wizard etc.)
+open(os.path.join(res, 'drawable', 'ic_action_osmand_logo.xml'), 'w').write("""<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#1E8E3E" android:fillType="evenOdd"
+        android:pathData="M5,2h14a3,3 0,0 1,3 3v14a3,3 0,0 1,-3 3h-14a3,3 0,0 1,-3 -3v-14a3,3 0,0 1,3 -3z M12,6.2L17.2,17.8L12,15L6.8,17.8Z"/>
+</vector>
+""")
+print('in-app logo replaced')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
