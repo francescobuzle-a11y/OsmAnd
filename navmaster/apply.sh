@@ -428,6 +428,32 @@ patch(dm, '\t\thiddenByDefault.add(DRAWER_VEHICLE_METRICS_ID);\n',
       '\t\thiddenByDefault.add(DRAWER_BUILDS_ID);\n')
 # 16) Only road-vehicle profiles: truck and car (camper/bus profiles come as truck-based custom profiles)
 patch(st, '"available_application_modes", "truck,car,bicycle,pedestrian,"', '"available_application_modes", "truck,car,"')
+# 17) Route preview: one-tap "Simula" chip (drives the route with simulated GPS), Start resets it
+ri = os.path.join(S, 'routepreparationmenu', 'MapRouteInfoMenu.java')
+patch(ri, '\t\tfor (LocalRoutingParameter parameter : mode.parameters) {\n\t\t\tif (parameter instanceof MuteSoundRoutingParameter) {',
+      '\t\t// NavMaster: one-tap navigation simulation\n'
+      '\t\tif (!mapActivity.getRoutingHelper().isPublicTransportMode()) {\n'
+      '\t\t\tView nmSim = createToolbarOptionView(true, mapActivity.getString(R.string.simulate_navigation),\n'
+      '\t\t\t\t\tR.drawable.ic_action_start_navigation, R.drawable.ic_action_start_navigation, v -> {\n'
+      '\t\t\t\t\t\tmapActivity.getApp().getSettings().simulateNavigation = true;\n'
+      '\t\t\t\t\t\tnmSimulationStarted = true;\n'
+      '\t\t\t\t\t\tclickRouteGo();\n'
+      '\t\t\t\t\t});\n'
+      '\t\t\tif (nmSim != null) {\n'
+      '\t\t\t\toptionsContainer.addView(nmSim, getContainerButtonLayoutParams(mapActivity, true));\n'
+      '\t\t\t}\n'
+      '\t\t}\n'
+      '\t\tfor (LocalRoutingParameter parameter : mode.parameters) {\n\t\t\tif (parameter instanceof MuteSoundRoutingParameter) {')
+patch(ri, '\t\tstartButton.setOnClickListener(v -> clickRouteGo());\n',
+      '\t\tstartButton.setOnClickListener(v -> {\n'
+      '\t\t\tif (nmSimulationStarted) {\n'
+      '\t\t\t\tnmSimulationStarted = false;\n'
+      '\t\t\t\tmapActivity.getApp().getSettings().simulateNavigation = false;\n'
+      '\t\t\t}\n'
+      '\t\t\tclickRouteGo();\n'
+      '\t\t});\n')
+patch(ri, '\tprivate void updateControlButtons(MapActivity mapActivity, View mainView) {\n',
+      '\tprivate static boolean nmSimulationStarted;\n\n\tprivate void updateControlButtons(MapActivity mapActivity, View mainView) {\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
