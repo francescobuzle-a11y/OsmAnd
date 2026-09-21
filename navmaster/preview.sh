@@ -45,6 +45,9 @@ sleep 5; adb wait-for-device
 sleep 40
 for i in $(seq 1 30); do adb shell pm path android 2>/dev/null | grep -q package: && break; sleep 3; done
 sleep 10; adb shell getprop persist.sys.locale >> "$INFO"
+# daytime (12:00) so the preview shows the day colours
+adb shell settings put global auto_time 0
+adb shell date 092110002026.00 >> "$INFO" 2>&1
 for i in 1 2 3 4 5; do adb install -r -g "$APK" && break; sleep 10; done
 adb shell appops set $PKG MANAGE_EXTERNAL_STORAGE allow || true
 
@@ -93,12 +96,14 @@ adb shell settings put system user_rotation 0; sleep 3
 
 # 5b) junction view demo (sample exit data; the real one appears near motorway exits)
 adb shell touch /sdcard/Android/data/$PKG/files/navmaster_junction_demo
+adb shell setprop debug.navmaster.jv 1
 sleep 6
 for i in 1 2 3; do adb emu geo fix 12.47$((4-i)) 43.96$((2-i)); sleep 2; done   # moves trigger a map redraw
 sleep 2; shot 10_svincolo_demo
 adb shell settings put system user_rotation 1; sleep 8; shot 11_svincolo_demo_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
 adb shell rm -f /sdcard/Android/data/$PKG/files/navmaster_junction_demo
+adb shell setprop debug.navmaster.jv 0
 
 # 6) launcher icon
 adb shell input keyevent 3; sleep 2
