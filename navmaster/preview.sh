@@ -82,6 +82,10 @@ shot 04_mappa; texts mappa
 tap_text "cerca|search" 228 157; sleep 6; shot 05_ricerca; texts ricerca
 adb shell input keyevent 4; sleep 3
 
+# 4b) main menu (essential items only)
+tap_text "menu" 90 2130; sleep 3; shot 05b_menu; texts menu
+adb shell input keyevent 4; sleep 2
+
 # 5) truck navigation
 view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=San%20Marino&profile=truck&force=true"
 sleep 8
