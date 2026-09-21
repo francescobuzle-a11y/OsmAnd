@@ -141,10 +141,14 @@ public class JunctionViewLayer extends OsmandMapLayer {
 
 	private boolean demoMode() {
 		long now = System.currentTimeMillis();
-		if (now - lastDemoCheck > 5000) {
+		if (now - lastDemoCheck > 1500) {
 			lastDemoCheck = now;
 			File dir = app.getAppPath(null);
 			demo = (dir != null && new File(dir, DEMO_FILE).exists()) || "1".equals(sysProp("debug.navmaster.jv"));
+			net.osmand.plus.helpers.TargetPoint tp = app.getTargetPointsHelper().getPointToNavigate();
+			if (tp != null && tp.getOnlyName() != null && tp.getOnlyName().contains("NAVMASTER_DEMO")) {
+				demo = true;
+			}
 		}
 		return demo;
 	}
