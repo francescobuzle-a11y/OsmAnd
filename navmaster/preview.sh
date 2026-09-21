@@ -104,6 +104,7 @@ adb shell rm -f /sdcard/Android/data/$PKG/files/navmaster_junction_demo
 adb shell input keyevent 3; sleep 2
 adb shell input swipe 540 1800 540 400 300; sleep 3; shot 09_icona_app
 adb logcat -d -t 3000 > "$OUT/logcat.txt" || true
+adb logcat -d | grep -i "NavMasterJV" > "$OUT/navmaster_log.txt" || true
 cp "$INFO" "$OUT/preview_info.txt" 2>/dev/null || true
 ls -la "$OUT"
 exit 0
