@@ -395,6 +395,18 @@ patch(os.path.join(S, 'views', 'MapLayers.java'), 'mapView.addLayer(mapInfoLayer
 patch(os.path.join(S, 'quickaction', 'MapButtonsHelper.java'),
       'registerIntPreference("default_map_button_corner_radius", ORIGINAL_VALUE)',
       'registerIntPreference("default_map_button_corner_radius", 10)')
+# 12) Truck navigation defaults (Garmin-like: warning signs, heading-up, auto zoom, vehicle icon)
+patch(st, '\t\tROTATE_MAP.setModeDefaultValue(ApplicationMode.PEDESTRIAN, ROTATE_MAP_BEARING);\n',
+      '\t\tROTATE_MAP.setModeDefaultValue(ApplicationMode.PEDESTRIAN, ROTATE_MAP_BEARING);\n'
+      '\t\t// NavMaster truck defaults\n'
+      '\t\tROTATE_MAP.setModeDefaultValue(ApplicationMode.TRUCK, ROTATE_MAP_BEARING);\n'
+      '\t\tAUTO_ZOOM_MAP.setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
+      '\t\tSHOW_TRAFFIC_WARNINGS.setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
+      '\t\tSHOW_PEDESTRIAN.setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
+      '\t\tSHOW_TUNNELS.setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
+      '\t\t((CommonPreference<Boolean>) SHOW_CAMERAS).setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
+      '\t\tSHOW_SPEED_LIMIT_WARNINGS.setModeDefaultValue(ApplicationMode.TRUCK, true);\n'
+      '\t\tNAVIGATION_ICON.setModeDefaultValue(ApplicationMode.TRUCK, LocationIcon.MOVEMENT_CAR.name());\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
