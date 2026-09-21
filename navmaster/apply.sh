@@ -454,6 +454,14 @@ patch(ri, '\t\tstartButton.setOnClickListener(v -> clickRouteGo());\n',
       '\t\t});\n')
 patch(ri, '\tprivate void updateControlButtons(MapActivity mapActivity, View mainView) {\n',
       '\tprivate static boolean nmSimulationStarted;\n\n\tprivate void updateControlButtons(MapActivity mapActivity, View mainView) {\n')
+# 18) Smaller APK: only European languages (resources.arsc) and compressed native libraries
+bgp = os.path.join(O, 'build.gradle')
+patch(bgp, '\tdefaultConfig {\n\t\tminSdkVersion osmand_minSdk\n',
+      '\tdefaultConfig {\n\t\tminSdkVersion osmand_minSdk\n'
+      '\t\tresConfigs "en", "it", "de", "fr", "es", "pt", "nl", "pl", "ro", "cs", "sk", "hu", "sl", "hr", "bs", "sr", "mk", "sq", "bg", "el", "da", "sv", "nb", "fi", "lt", "lv", "et", "uk", "ru", "tr", "ca"\n')
+patch(bgp, '\tlintOptions {\n\t\tlintConfig file("lint.xml")\n',
+      '\tpackagingOptions {\n\t\tjniLibs {\n\t\t\tuseLegacyPackaging = true\n\t\t}\n\t}\n\n'
+      '\tlintOptions {\n\t\tlintConfig file("lint.xml")\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
