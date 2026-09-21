@@ -333,7 +333,7 @@ pas = os.path.join(S, 'views', 'mapwidgets', 'configure', 'appearance', 'PanelAp
 patch(pas, '''		@JvmStatic
 		fun getCommittedCustomBackgroundColor(''', '''		// NavMaster defaults
 		private fun navmasterPanel(panel: WidgetsPanel): Boolean =
-			panel == WidgetsPanel.TOP || panel == WidgetsPanel.BOTTOM
+			panel == WidgetsPanel.TOP
 
 		@JvmStatic
 		fun navmasterBackgroundMode(panel: WidgetsPanel): PanelBackgroundMode =
@@ -347,7 +347,7 @@ patch(pas, '''		@JvmStatic
 		@ColorInt
 		fun navmasterBackgroundColor(app: OsmandApplication, panel: WidgetsPanel, nightMode: Boolean): Int =
 			when (panel) {
-				WidgetsPanel.TOP -> if (nightMode) 0xFF14632B.toInt() else 0xFF1E8E3E.toInt()
+				WidgetsPanel.TOP -> if (nightMode) 0xFF1C6B31.toInt() else 0xFF2E9E48.toInt()
 				WidgetsPanel.BOTTOM -> if (nightMode) 0xFF111418.toInt() else 0xFF23282E.toInt()
 				else -> getDefaultColor(app, panel, PanelColorTarget.BACKGROUND, nightMode)
 			}
@@ -412,6 +412,15 @@ for cf in glob.glob(os.path.join(res, 'values*', 'colors.xml')):
         s = re.sub(r'(<color name="%s">)[^<]*(</color>)' % name, r'\g<1>%s\g<2>' % val, s)
     if s != n0:
         open(cf, 'w', encoding='utf-8').write(s); print('brand colors in', os.path.relpath(cf, A))
+# 10) Junction view (schematic 3D view of motorway exits/forks) as a map layer
+shutil.copy(os.path.join(A, 'navmaster', 'JunctionViewLayer.java'), os.path.join(S, 'views', 'layers', 'JunctionViewLayer.java'))
+patch(os.path.join(S, 'views', 'MapLayers.java'), 'mapView.addLayer(mapInfoLayer, 9);',
+      'mapView.addLayer(mapInfoLayer, 9);\n\t\tmapView.addLayer(new net.osmand.plus.views.layers.JunctionViewLayer(app), 9.5f);')
+
+# 11) Squarer map buttons (rounded rectangles instead of circles)
+patch(os.path.join(S, 'quickaction', 'MapButtonsHelper.java'),
+      'registerIntPreference("default_map_button_corner_radius", ORIGINAL_VALUE)',
+      'registerIntPreference("default_map_button_corner_radius", 10)')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
