@@ -47,7 +47,8 @@ for i in $(seq 1 30); do adb shell pm path android 2>/dev/null | grep -q package
 sleep 10; adb shell getprop persist.sys.locale >> "$INFO"
 # daytime (12:00) so the preview shows the day colours
 adb shell settings put global auto_time 0
-adb shell date 092110002026.00 >> "$INFO" 2>&1
+# daytime (10:00) of tomorrow: keeps the day map style and valid HTTPS certificates
+adb shell date "$(date -u -d '+1 day' +%m%d)1000$(date -u -d '+1 day' +%Y).00" >> "$INFO" 2>&1
 for i in 1 2 3 4 5; do adb install -r -g "$APK" && break; sleep 10; done
 adb shell appops set $PKG MANAGE_EXTERNAL_STORAGE allow || true
 
