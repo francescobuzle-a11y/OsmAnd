@@ -83,6 +83,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 
 	private final LruCache<String, Bitmap> tiles = new LruCache<>(48);
 	private final Set<String> loading = new HashSet<>();
+	private final java.util.Map<String, Long> failed = new java.util.HashMap<>();
 	private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
 	private long lastRestrictionCheck;
@@ -126,7 +127,10 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			float top = topOffset(h);
 			String demo = demoName();
 
-			drawButtons(canvas, w, h, landscape);
+			float panelBottom = 0;
+			if (System.currentTimeMillis() - JunctionViewLayer.nmPanelShownAt < 800) {
+				panelBottom = JunctionViewLayer.nmPanelBottom;
+			}
 
 			// restriction banner
 			updateRestriction(rh, demo);
@@ -137,9 +141,10 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			if (restrictionText != null) {
 				RectF banner = landscape
 						? new RectF(w * 0.11f, bannerTop, w * 0.49f, bannerTop + 40 * dp)
-						: new RectF(10 * dp, bannerTop, w - 10 * dp, bannerTop + 40 * dp);
+						: new RectF(64 * dp, bannerTop, w - 10 * dp, bannerTop + 40 * dp);
 				drawBanner(canvas, banner);
 				bannerTop = banner.bottom + 6 * dp;
+				panelBottom = Math.max(panelBottom, banner.bottom);
 			}
 
 			// arrival panel with satellite view (junction view has priority)
@@ -156,8 +161,10 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 						panel = new RectF(10 * dp, t, w - 10 * dp, t + Math.min(w * 0.62f, h * 0.34f));
 					}
 					drawArrival(canvas, panel, tp.getLatitude(), tp.getLongitude(), rh, night);
+					panelBottom = Math.max(panelBottom, panel.bottom);
 				}
 			}
+			drawButtons(canvas, w, h, landscape, panelBottom);
 			long now = System.currentTimeMillis();
 			if (now - lastLog > 5000) {
 				lastLog = now;
@@ -479,7 +486,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			return b;
 		}
 		synchronized (loading) {
-			if (loading.contains(key)) {
+			Long failedAt = failed.get(key);
+			if (loading.contains(key) || (failedAt != null && System.currentTimeMillis() - failedAt < 30000)) {
 				return null;
 			}
 			loading.add(key);
@@ -511,7 +519,11 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 					}
 					conn.disconnect();
 				}
-				if (res != null) {
+				if (res == null) {
+					synchronized (loading) {
+						failed.put(key, System.currentTimeMillis());
+					}
+				} else {
 					tiles.put(key, res);
 					if (view != null) {
 						view.refreshMap();
@@ -519,6 +531,9 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				}
 			} catch (Exception e) {
 				Log.w(TAG, "tile " + key + " failed: " + e);
+				synchronized (loading) {
+					failed.put(key, System.currentTimeMillis());
+				}
 			} finally {
 				synchronized (loading) {
 					loading.remove(key);
@@ -530,10 +545,10 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 
 	// ---------------------------------------------------------------- buttons
 
-	private void drawButtons(Canvas c, int w, int h, boolean landscape) {
+	private void drawButtons(Canvas c, int w, int h, boolean landscape, float panelBottom) {
 		float d = 54 * dp;
 		float x = 12 * dp;
-		float y = landscape ? h * 0.36f : h * 0.44f;
+		float y = landscape ? h * 0.36f : Math.max(h * 0.44f, panelBottom + 14 * dp);
 		reportBtn.set(x, y, x + d, y + d);
 		poiBtn.set(x, y + d + 12 * dp, x + d, y + 2 * d + 12 * dp);
 		buttonsVisible = true;
