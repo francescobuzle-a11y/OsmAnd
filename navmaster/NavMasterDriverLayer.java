@@ -561,11 +561,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			if (bottom != null && bottom.getVisibility() == View.VISIBLE && bottom.getHeight() > 0) {
 				int[] loc = new int[2];
 				bottom.getLocationInWindow(loc);
-				int[] mapLoc = new int[2];
-				if (view != null) {
-					view.getLocationInWindow(mapLoc);
-				}
-				return loc[1] - mapLoc[1] - 6 * dp;
+				return loc[1] - 6 * dp;
 			}
 		}
 		return h - 6 * dp;
