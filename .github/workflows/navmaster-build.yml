@@ -92,4 +92,5 @@ jobs:
         files: |
           out/*.apk
           shots/*.png
+          shots/*.txt
         make_latest: true
