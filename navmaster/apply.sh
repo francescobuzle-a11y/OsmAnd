@@ -382,6 +382,12 @@ patch(os.path.join(res, 'values', 'strings.xml'),
 patch(os.path.join(res, 'values-it', 'strings.xml'),
       '<string name="start_search_from_city">Prima specifica paese/città/località</string>',
       '<string name="start_search_from_city">Città › Via › Numero civico</string>')
+# 7) Truck-first: Truck profile enabled and used by default
+st = os.path.join(S, 'settings', 'backend', 'OsmandSettings.java')
+patch(st, '"available_application_modes", "car,bicycle,pedestrian,public_transport,"',
+      '"available_application_modes", "truck,car,bicycle,pedestrian,"')
+patch(st, 'new CommonPreference<ApplicationMode>(this, "default_application_mode_string", ApplicationMode.DEFAULT)',
+      'new CommonPreference<ApplicationMode>(this, "default_application_mode_string", ApplicationMode.TRUCK)')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
