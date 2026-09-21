@@ -328,46 +328,18 @@ patch(os.path.join(S, 'settings', 'backend', 'OsmandSettings.java'),
       'new StringPreference(this, "renderer", RendererRegistry.DEFAULT_RENDER)',
       'new StringPreference(this, "renderer", RendererRegistry.NAVMASTER_RENDER)')
 
-# 4) Garmin-like panels: green maneuver banner on top, dark info bar at bottom
-pas = os.path.join(S, 'views', 'mapwidgets', 'configure', 'appearance', 'PanelAppearanceSettings.kt')
-patch(pas, '''		@JvmStatic
-		fun getCommittedCustomBackgroundColor(''', '''		// NavMaster defaults
-		private fun navmasterPanel(panel: WidgetsPanel): Boolean =
-			panel == WidgetsPanel.TOP
-
-		@JvmStatic
-		fun navmasterBackgroundMode(panel: WidgetsPanel): PanelBackgroundMode =
-			if (navmasterPanel(panel)) PanelBackgroundMode.CUSTOM else PanelBackgroundMode.DEFAULT
-
-		@JvmStatic
-		fun navmasterTextMode(panel: WidgetsPanel): PanelTextColorMode =
-			if (navmasterPanel(panel)) PanelTextColorMode.AUTOMATIC else PanelTextColorMode.DEFAULT
-
-		@JvmStatic
-		@ColorInt
-		fun navmasterBackgroundColor(app: OsmandApplication, panel: WidgetsPanel, nightMode: Boolean): Int =
-			when (panel) {
-				WidgetsPanel.TOP -> if (nightMode) 0xFF1C6B31.toInt() else 0xFF2E9E48.toInt()
-				WidgetsPanel.BOTTOM -> if (nightMode) 0xFF111418.toInt() else 0xFF23282E.toInt()
-				else -> getDefaultColor(app, panel, PanelColorTarget.BACKGROUND, nightMode)
-			}
-
-		@JvmStatic
-		fun getCommittedCustomBackgroundColor(''')
-patch(pas, '"widget_panel_text_color_mode$suffix", PanelTextColorMode.DEFAULT,',
-      '"widget_panel_text_color_mode$suffix", navmasterTextMode(panel),')
-patch(pas, '"widget_panel_secondary_text_color_mode$suffix", PanelTextColorMode.DEFAULT,',
-      '"widget_panel_secondary_text_color_mode$suffix", navmasterTextMode(panel),')
-patch(pas, '"widget_panel_background_mode$suffix", PanelBackgroundMode.DEFAULT,',
-      '"widget_panel_background_mode$suffix", navmasterBackgroundMode(panel),')
-patch(pas, '''"widget_panel_background_color_day$suffix",
-		getDefaultColor(app, panel, PanelColorTarget.BACKGROUND, false))''',
-      '''"widget_panel_background_color_day$suffix",
-		navmasterBackgroundColor(app, panel, false))''')
-patch(pas, '''"widget_panel_background_color_night$suffix",
-		getDefaultColor(app, panel, PanelColorTarget.BACKGROUND, true))''',
-      '''"widget_panel_background_color_night$suffix",
-		navmasterBackgroundColor(app, panel, true))''')
+# 4) NavMaster theme: green maneuver bar on top (default look of the top panel, white text)
+res_kt = os.path.join(S, 'views', 'mapwidgets', 'appearance', 'PanelAppearanceResolver.kt')
+patch(res_kt, """		var tintBackground = false
+""", """		var tintBackground = false
+		// NavMaster: the top (maneuver) panel is green by default
+		if (panel == WidgetsPanel.TOP && backgroundMode == PanelBackgroundMode.DEFAULT) {
+			backgroundColor = if (nightMode) 0xFF1C6B31.toInt() else 0xFF2E9E48.toInt()
+			tintBackground = true
+			primaryTextColor = Color.WHITE
+			secondaryTextColor = 0xDDFFFFFF.toInt()
+		}
+""")
 
 # 5) Default widgets for Truck/Car: street name bar, lanes, speed limit sign, current speed
 wah = os.path.join(S, 'settings', 'backend', 'WidgetsAvailabilityHelper.java')
