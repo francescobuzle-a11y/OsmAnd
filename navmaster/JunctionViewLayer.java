@@ -245,7 +245,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 
 		float pw = p.width();
 		float ph = p.height();
-		float horizon = p.top + ph * 0.46f;
+		float horizon = p.top + ph * 0.50f;
 
 		// sky and ground
 		fill.setShader(new LinearGradient(0, p.top, 0, horizon,
@@ -371,11 +371,11 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		// dashes shrink with distance
 		float t = 0f;
 		float seg = 0.16f;
-		while (t < 0.95f) {
+		for (int k = 0; k < 40 && t < 0.95f; k++) {
 			float t2 = Math.min(1f, t + seg * 0.55f);
 			canvas.drawLine(lerp(x0, x1, ease(t)), lerp(y0, y1, ease(t)), lerp(x0, x1, ease(t2)), lerp(y0, y1, ease(t2)), stroke);
 			t += seg;
-			seg *= 0.82f;
+			seg = Math.max(0.03f, seg * 0.85f);
 		}
 	}
 
@@ -429,7 +429,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		}
 		float pw = p.width();
 		float signW = pw * 0.62f;
-		float textSize = Math.max(13 * dp, Math.min(20 * dp, p.height() * 0.085f));
+		float textSize = Math.max(12 * dp, Math.min(16 * dp, p.height() * 0.062f));
 		text.setTextSize(textSize);
 		int lines = Math.max(1, j.destinations.size());
 		float lineH = textSize * 1.25f;
@@ -443,8 +443,10 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		// posts
 		fill.setColor(night ? 0xFF6B7178 : 0xFF8A9199);
 		float postW = 4 * dp;
-		canvas.drawRect(sign.left + signW * 0.2f - postW / 2, sign.bottom, sign.left + signW * 0.2f + postW / 2, horizon, fill);
-		canvas.drawRect(sign.right - signW * 0.2f - postW / 2, sign.bottom, sign.right - signW * 0.2f + postW / 2, horizon, fill);
+		if (sign.bottom < horizon) {
+			canvas.drawRect(sign.left + signW * 0.2f - postW / 2, sign.bottom, sign.left + signW * 0.2f + postW / 2, horizon, fill);
+			canvas.drawRect(sign.right - signW * 0.2f - postW / 2, sign.bottom, sign.right - signW * 0.2f + postW / 2, horizon, fill);
+		}
 
 		fill.setColor(j.motorway ? SIGN_GREEN : SIGN_BLUE);
 		canvas.drawRoundRect(sign, 6 * dp, 6 * dp, fill);
