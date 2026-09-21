@@ -166,7 +166,6 @@ cat > "$W/navmaster.render.xml" <<'STYLE_EOF'
 				<apply_if additional="covered=yes" attrColorValue="#7A4A15"/>
 			</apply_if>
 		</case>
-		<apply_if hideOverground="true" attrColorValue="$hideOvergroundHighwayColor"/>
 	</renderingAttribute>
 	<renderingAttribute name="trunkRoadColor">
 		<case attrColorValue="#F7B84A">
@@ -177,7 +176,6 @@ cat > "$W/navmaster.render.xml" <<'STYLE_EOF'
 				<apply_if additional="covered=yes" attrColorValue="#6E5426"/>
 			</apply_if>
 		</case>
-		<apply_if hideOverground="true" attrColorValue="$hideOvergroundHighwayColor"/>
 	</renderingAttribute>
 	<renderingAttribute name="primaryRoadColor">
 		<case attrColorValue="#FFD966">
@@ -188,7 +186,6 @@ cat > "$W/navmaster.render.xml" <<'STYLE_EOF'
 				<apply_if additional="covered=yes" attrColorValue="#645530"/>
 			</apply_if>
 		</case>
-		<apply_if hideOverground="true" attrColorValue="$hideOvergroundHighwayColor"/>
 	</renderingAttribute>
 	<renderingAttribute name="secondaryRoadColor">
 		<case attrColorValue="#FFF1A8">
@@ -199,7 +196,6 @@ cat > "$W/navmaster.render.xml" <<'STYLE_EOF'
 				<apply_if additional="covered=yes" attrColorValue="#57523A"/>
 			</apply_if>
 		</case>
-		<apply_if hideOverground="true" attrColorValue="$hideOvergroundHighwayColor"/>
 	</renderingAttribute>
 	<renderingAttribute name="tertiaryRoadColor">
 		<case attrColorValue="#FFFFFF">
@@ -210,7 +206,6 @@ cat > "$W/navmaster.render.xml" <<'STYLE_EOF'
 				<apply_if additional="covered=yes" attrColorValue="#454B52"/>
 			</apply_if>
 		</case>
-		<apply_if hideOverground="true" attrColorValue="$hideOvergroundHighwayColor"/>
 	</renderingAttribute>
 	<renderingAttribute name="residentialRoadColor">
 		<case attrColorValue="#FFFFFF">
@@ -221,7 +216,6 @@ cat > "$W/navmaster.render.xml" <<'STYLE_EOF'
 				<apply_if additional="covered=yes" attrColorValue="#3C4248"/>
 			</apply_if>
 		</case>
-		<apply_if hideOverground="true" attrColorValue="$hideOvergroundHighwayColor"/>
 	</renderingAttribute>
 	<renderingAttribute name="motorwayRoadLowZoomColor">
 		<case attrColorValue="$motorwayRoadColor"/>
@@ -313,6 +307,17 @@ for f in glob.glob(os.path.join(res, 'drawable', 'image_text_osmand*.xml')):
 print('assets copied')
 
 # 3) Map style "NavMaster Truck" as default renderer
+# sanity check: every $reference must be an attribute defined earlier in this file or a
+# renderingConstant (OsmAnd cannot see the parent style's attributes while parsing a child)
+_st = open(os.path.join(P, 'navmaster.render.xml'), encoding='utf-8').read()
+_consts = set(re.findall(r'<renderingConstant name="([^"]+)"', open(os.path.join(R, 'rendering_styles', 'default.render.xml'), encoding='utf-8').read()))
+_consts |= set(re.findall(r'<renderingConstant name="([^"]+)"', _st))
+for _m in re.finditer(r'\$([A-Za-z_][A-Za-z0-9_]*)', _st):
+    _name = _m.group(1)
+    _defined = set(re.findall(r'<renderingAttribute name="([^"]+)"', _st[:_m.start()]))
+    if _name not in _defined and _name not in _consts:
+        sys.exit('STYLE ERROR: $' + _name + ' is not defined in navmaster.render.xml before use')
+print('style references OK')
 shutil.copy(os.path.join(P, 'navmaster.render.xml'), os.path.join(R, 'rendering_styles', 'navmaster.render.xml'))
 rr = os.path.join(S, 'render', 'RendererRegistry.java')
 patch(rr, 'public static final String DEFAULT_RENDER_FILE_PATH = "default.render.xml";',
@@ -397,6 +402,16 @@ open(os.path.join(res, 'drawable', 'ic_action_osmand_logo.xml'), 'w').write("""<
 </vector>
 """)
 print('in-app logo replaced')
+# 9) Brand accent: OsmAnd orange -> NavMaster green
+brand = {'osmand_orange': '#1E8E3E', 'osmand_orange_dark': '#166E30',
+         'icon_color_osmand_light': '#1E8E3E', 'icon_color_osmand_dark': '#2FA84F',
+         'status_bar_main_light': '#166E30'}
+for cf in glob.glob(os.path.join(res, 'values*', 'colors.xml')):
+    s = open(cf, encoding='utf-8').read(); n0 = s
+    for name, val in brand.items():
+        s = re.sub(r'(<color name="%s">)[^<]*(</color>)' % name, r'\g<1>%s\g<2>' % val, s)
+    if s != n0:
+        open(cf, 'w', encoding='utf-8').write(s); print('brand colors in', os.path.relpath(cf, A))
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
