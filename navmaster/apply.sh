@@ -348,6 +348,8 @@ patch(wah, 'regWidgetVisibility(CURRENT_SPEED, BICYCLE, BOAT, SKI, PUBLIC_TRANSP
 patch(wah, 'regWidgetVisibility(MAX_SPEED, none);', 'regWidgetVisibility(MAX_SPEED, CAR, TRUCK, MOTORCYCLE);')
 patch(wah, 'regWidgetVisibility(STREET_NAME, CAR);', 'regWidgetVisibility(STREET_NAME, CAR, TRUCK);')
 patch(wah, 'regWidgetVisibility(LANES, CAR, BICYCLE);', 'regWidgetVisibility(LANES, CAR, TRUCK, BICYCLE);')
+patch(wah, 'ApplicationMode[] secondNextTurnSet = {CAR, BICYCLE, PEDESTRIAN, BOAT, SKI, TRUCK, MOTORCYCLE, HORSE, MOPED};',
+      'ApplicationMode[] secondNextTurnSet = {BICYCLE, PEDESTRIAN, BOAT, SKI, MOTORCYCLE, HORSE, MOPED};')
 
 # 6) iGO/Garmin-like search: open on Address (City > Street > Number) instead of History
 patch(os.path.join(S, 'helpers', 'MapFragmentsHelper.java'),
