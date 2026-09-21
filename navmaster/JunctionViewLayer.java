@@ -115,7 +115,8 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		float top = topOffset(h);
 		RectF panel;
 		if (landscape) {
-			panel = new RectF(w * 0.50f, top, w - margin, Math.min(h * 0.80f, top + (w * 0.5f - margin) * 0.66f));
+			// landscape: right half, kept above the bottom info bar and the zoom buttons
+			panel = new RectF(w * 0.50f, top, w - margin, Math.min(h - 150 * dp, top + (w * 0.5f - margin) * 0.66f));
 		} else {
 			// portrait: below the first row of map buttons and the speed widget
 			top += 64 * dp;
