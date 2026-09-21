@@ -24,6 +24,9 @@ jobs:
         repository: osmandapp/OsmAnd-resources
         path: resources
 
+    - name: Apply NavMaster customizations
+      run: bash android/navmaster/apply.sh
+
     - name: Set up JDK 17
       uses: actions/setup-java@v5
       with:
