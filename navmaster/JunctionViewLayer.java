@@ -440,6 +440,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		path.addRoundRect(strip, r, r, Path.Direction.CW);
 		canvas.clipPath(path);
 		fill.setStyle(Paint.Style.FILL);
+		fill.setColor(0xFFFFFFFF);
 		fill.setShader(new LinearGradient(0, strip.top, 0, strip.bottom, 0xF2222A36, 0xF2121821, Shader.TileMode.CLAMP));
 		canvas.drawRect(strip, fill);
 		fill.setShader(null);
