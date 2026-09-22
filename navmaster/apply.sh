@@ -625,6 +625,149 @@ patch(brl, '\t\tFloat width = widthKey != null ? getWidthByKey(tileBox, widthKey
       '\t\tint z = tileBox.getZoom();\n'
       '\t\tfloat f = z >= 16 ? 1f : z >= 14 ? 0.8f : z >= 12 ? 0.55f : 0.4f; // NavMaster\n'
       '\t\treturn Math.max(3 * view.getDensity(), w * f);\n')
+NM_FUZZY_CODE = '''	// ---- NavMaster: typo tolerance, used only by the automatic retry when the exact search found nothing
+	public static volatile boolean NM_FUZZY = false;
+
+	public static boolean nmFuzzyMatch(String searchIn, String theStart) {
+		if (searchIn == null || theStart == null) {
+			return false;
+		}
+		int m = theStart.length();
+		if (m < 4 || searchIn.isEmpty()) {
+			return false;
+		}
+		int max = m >= 8 ? 2 : 1;
+		for (int i = 0; i < searchIn.length(); i++) {
+			if (i > 0 && !isSpace(searchIn.charAt(i - 1))) {
+				continue;
+			}
+			int from = Math.min(searchIn.length(), i + Math.max(1, m - max));
+			int to = Math.min(searchIn.length(), i + m + max);
+			for (int e = from; e <= to; e++) {
+				if (nmEditDistance(searchIn.substring(i, e), theStart, max) <= max) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static int nmEditDistance(String a, String b, int max) {
+		int n = a.length();
+		int m = b.length();
+		if (Math.abs(n - m) > max) {
+			return max + 1;
+		}
+		int[] prev = new int[m + 1];
+		int[] cur = new int[m + 1];
+		for (int j = 0; j <= m; j++) {
+			prev[j] = j;
+		}
+		for (int i = 1; i <= n; i++) {
+			cur[0] = i;
+			int best = cur[0];
+			for (int j = 1; j <= m; j++) {
+				int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+				cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+				best = Math.min(best, cur[j]);
+			}
+			if (best > max) {
+				return max + 1;
+			}
+			int[] t = prev;
+			prev = cur;
+			cur = t;
+		}
+		return prev[m];
+	}
+
+	// "viaattilio" -> "via attilio": glued street prefixes are split on the retry
+	public static String nmSplitGlued(String q) {
+		if (q == null || q.isEmpty()) {
+			return q;
+		}
+		String[] prefixes = {"piazzale", "piazza", "viale", "vicolo", "corso", "strada", "contrada",
+				"localita", "frazione", "largo", "borgo", "via"};
+		StringBuilder out = new StringBuilder();
+		for (String token : q.split(" ")) {
+			String low = token.toLowerCase(Locale.getDefault());
+			for (String pr : prefixes) {
+				if (low.length() > pr.length() + 2 && low.startsWith(pr)) {
+					token = token.substring(0, pr.length()) + " " + token.substring(pr.length());
+					break;
+				}
+			}
+			if (out.length() > 0) {
+				out.append(' ');
+			}
+			out.append(token);
+		}
+		return out.toString();
+	}
+
+'''
+
+NM_SEARCH_RETRY = '''	private int nmRetry;
+	private String nmRetryFor;
+
+	// NavMaster: like Google Maps, when nothing matches exactly the search is repeated automatically,
+	// first accepting typos and glued words, then with a wider radius
+	private String nmFixQuery(String text) {
+		return net.osmand.CollatorStringMatcher.NM_FUZZY
+				? net.osmand.CollatorStringMatcher.nmSplitGlued(text) : text;
+	}
+
+	private boolean nmAutoRetry() {
+		if (paused || cancelPrev || isTextEmpty()) {
+			return false;
+		}
+		String q = searchQuery;
+		if (q == null || !q.equals(nmRetryFor)) {
+			nmRetryFor = q;
+			nmRetry = 0;
+		}
+		if (!isResultEmpty()) {
+			nmRetry = 0;
+			net.osmand.CollatorStringMatcher.NM_FUZZY = false;
+			return false;
+		}
+		if (nmRetry >= 3) {
+			return false;
+		}
+		nmRetry++;
+		net.osmand.CollatorStringMatcher.NM_FUZZY = true;
+		if (nmRetry > 1) {
+			SearchSettings ss = searchUICore.getSearchSettings();
+			searchUICore.updateSettings(ss.setRadiusLevel(ss.getRadiusLevel() + 1));
+		}
+		runCoreSearch(q, false, true);
+		return true;
+	}
+
+'''
+
+# 27) Lanes are drawn by the NavMaster lane strip (animated 3D arrows), so OsmAnd's own lanes widget is hidden
+patch(wah, 'regWidgetVisibility(LANES, CAR, TRUCK, BICYCLE);',
+      'regWidgetVisibility(LANES, CAR, TRUCK, BICYCLE).removeIf(m -> m == CAR || m == TRUCK\n'
+      '\t\t\t\t|| m.getParent() == CAR || m.getParent() == TRUCK);')
+# 28) Google-Maps-like search: typo tolerance and glued words ("viaattilio mori") on an automatic second try
+csm = os.path.join(A, 'OsmAnd-java', 'src', 'main', 'java', 'net', 'osmand', 'CollatorStringMatcher.java')
+patch(csm, "\tprivate static boolean isWordStart(String searchIn, int index, String part) {",
+      NM_FUZZY_CODE + "\tprivate static boolean isWordStart(String searchIn, int index, String part) {")
+patch(csm, "\t\tif (startLength > searchInLength) {\n\t\t\treturn false;\n\t\t}",
+      "\t\tif (startLength > searchInLength) {\n\t\t\treturn NM_FUZZY && nmFuzzyMatch(searchIn, theStart);\n\t\t}")
+patch(csm, "\t\tif (!checkBeginning && !checkSpaces && equals) {\n\t\t\treturn collator.equals(searchIn, theStart);\n\t\t}\n\t\treturn false;\n\t}",
+      "\t\tif (!checkBeginning && !checkSpaces && equals) {\n\t\t\treturn collator.equals(searchIn, theStart);\n\t\t}\n"
+      "\t\tif (NM_FUZZY) {\n\t\t\treturn nmFuzzyMatch(searchIn, theStart);\n\t\t}\n\t\treturn false;\n\t}")
+qs = os.path.join(S, 'search', 'dialogs', 'QuickSearchDialogFragment.java')
+patch(qs, "\tprivate void onSearchFinished(SearchPhrase phrase) {\n\t\tpreservePoiTypeChips = false;",
+      NM_SEARCH_RETRY + "\tprivate void onSearchFinished(SearchPhrase phrase) {\n"
+      "\t\tif (nmAutoRetry()) {\n\t\t\treturn;\n\t\t}\n\t\tpreservePoiTypeChips = false;")
+patch(qs, "\t\tsearchUICore.search(text, showQuickResult, new ResultMatcher<SearchResult>() {",
+      "\t\tsearchUICore.search(nmFixQuery(text), showQuickResult, new ResultMatcher<SearchResult>() {")
+patch(qs, "\tprivate void runSearch(String text, boolean preserveSelectedPoiTypeNames) {\n\t\tshowProgressBar();",
+      "\tprivate void runSearch(String text, boolean preserveSelectedPoiTypeNames) {\n"
+      "\t\tnet.osmand.CollatorStringMatcher.NM_FUZZY = false;\n\t\tnmRetry = 0;\n\t\tshowProgressBar();")
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
