@@ -205,12 +205,13 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				}
 			}
 
-			// restriction banner, on the map side and under the top bar
+			// restriction banner: bottom left of the map area, like the warnings on a Garmin
 			updateRestriction(rh, demo);
 			float bannerTop = mapTop + 6 * dp;
 			if (restrictionText != null) {
 				float bw = Math.min(mapRight - mapLeft - 20 * dp, 330 * dp);
-				RectF banner = new RectF(mapLeft + 10 * dp, bannerTop, mapLeft + 10 * dp + bw, bannerTop + 38 * dp);
+				float bt = mapBottom - 46 * dp;
+				RectF banner = new RectF(mapLeft + 10 * dp, bt, mapLeft + 10 * dp + bw, bt + 38 * dp);
 				RectF fb = nmFit(banner, obstacles(), 170 * dp, 34 * dp, 6 * dp);
 				if (fb != null) {
 					banner = fb;
@@ -218,7 +219,6 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				}
 				drawBanner(canvas, banner);
 				placed.add(banner);
-				bannerTop = banner.bottom + 6 * dp;
 			}
 
 			// arrival panel with satellite view, in the same slot (the junction view has priority)
@@ -1312,7 +1312,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float x = mapLeft + 10 * dp;
 		float blockH = 2 * d + 10 * dp;
 		float minY = mapTop + 6 * dp;
-		float maxY = mapBottom - blockH - 8 * dp;
+		float maxY = mapBottom - blockH - 56 * dp;
 		if (maxY < minY || mapRight - mapLeft < 120 * dp) {
 			buttonsVisible = false;
 			return;
