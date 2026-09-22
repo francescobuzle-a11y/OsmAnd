@@ -127,6 +127,15 @@ adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4780 
 adb shell settings put system user_rotation 0; sleep 3
 adb logcat -d | grep -i "NavMasterDL\|NavMaster:" > "$OUT/navmaster_driver_log.txt" || true
 
+# 5d) smooth simulation (auto-started by the NAVMASTER_SIM destination name), Sygic-style bottom panel
+view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=NAVMASTER_SIM&profile=truck&force=true"
+sleep 10
+tap_text "mantieni attivo|keep active"; sleep 2
+sleep 8; shot 15_simulazione_1
+sleep 6; shot 16_simulazione_2
+adb shell settings put system user_rotation 1; sleep 8; shot 17_simulazione_orizzontale
+adb shell settings put system user_rotation 0; sleep 3
+
 # 6) launcher icon
 adb shell input keyevent 3; sleep 2
 adb shell input swipe 540 1800 540 400 300; sleep 3; shot 09_icona_app
