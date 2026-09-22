@@ -116,7 +116,7 @@ adb shell rm -f /sdcard/Android/data/$PKG/files/navmaster_junction_demo
 adb shell setprop debug.navmaster.jv 0
 
 # 5c) arrival panel with satellite view + restriction banner (sample data)
-view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=43.9640&dest_lon=12.4760&dest_name=NAVMASTER_ARRIVO&profile=truck&force=true"
+view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=NAVMASTER_ARRIVO&profile=truck&force=true"
 sleep 10
 tap_text "mantieni attivo|keep active"; sleep 2
 for i in 1 2 3; do adb emu geo fix 12.4785 43.9665; sleep 3; done
