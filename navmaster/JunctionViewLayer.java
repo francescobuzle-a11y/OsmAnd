@@ -39,6 +39,7 @@ import java.util.List;
 public class JunctionViewLayer extends OsmandMapLayer {
 
 	private static final int SHOW_DISTANCE_M = 1200;
+	private static final int LANES_DISTANCE_M = 800;
 	private static final String DEMO_FILE = "navmaster_junction_demo";
 
 	private static final int ROUTE_MAGENTA = 0xFFC2189A;
@@ -56,6 +57,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
 	private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
 	private final Path path = new Path();
+	private final Path shaft = new Path();
+	private boolean animPending;
+	private float animPhase;
 	private float dp;
 	private long lastDemoCheck;
 	private long lastLog;
@@ -83,6 +87,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		int distance;
 		int[] lanes;
 		int turn;
+		boolean compact;
 		String exitRef;
 		List<String> destinations = new ArrayList<>();
 		boolean motorway = true;
@@ -118,28 +123,37 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		boolean landscape = w > h;
 		float margin = 10 * dp;
 		float top = topOffset(h);
+		animPhase = (now % 1400L) / 1400f;
+		RectF slot = NavMasterDriverLayer.nmSlot;
 		RectF panel;
-		if (landscape) {
-			// landscape: right half, kept above the bottom info bar and the zoom buttons
-			panel = new RectF(w * 0.50f, top, w - margin, Math.min(h - 20 * dp, top + (w * 0.5f - margin) * 0.66f));
+		if (slot != null && slot.width() > 150 * dp && slot.height() > 80 * dp) {
+			// the driver layer reserves a slot: the right pane in landscape, under the top bar in portrait
+			panel = new RectF(slot);
+			if (j.compact) {
+				panel.bottom = panel.top + Math.min(slot.height(), (landscape ? 104 : 110) * dp);
+			}
+		} else if (landscape) {
+			panel = new RectF(w * 0.52f, top, w - margin, Math.min(h - 20 * dp, top + (w * 0.48f - margin) * 0.66f));
 		} else {
-			// portrait: below the first row of map buttons and the speed widget
 			top += 64 * dp;
-			float ph = Math.min(w * 0.60f, h * 0.34f);
-			panel = new RectF(margin, top, w - margin, top + ph);
+			panel = new RectF(margin, top, w - margin, top + Math.min(w * 0.56f, h * 0.30f));
 		}
-		if (now - lastLog < 50) {
-			Log.i("NavMasterJV", "panel=" + panel);
+		if (!j.compact && !landscape && panel.height() > panel.width() * 0.72f) {
+			panel.bottom = panel.top + panel.width() * 0.72f;
 		}
-		// keep clear of OsmAnd's lanes widget, speed widgets, zoom buttons and of the NavMaster bottom card
-		RectF fitted = NavMasterDriverLayer.nmFitPanel(panel, 200 * dp, 130 * dp, 8 * dp);
+		RectF fitted = NavMasterDriverLayer.nmFitPanel(panel, 150 * dp, 80 * dp, 8 * dp);
 		if (fitted != null) {
 			panel = fitted;
 		}
 		nmPanelShownAt = now;
 		nmPanelBottom = panel.bottom;
 		nmPanelRect = new RectF(panel);
-		drawPanel(canvas, panel, j, night);
+		if (j.compact) {
+			drawLaneStrip(canvas, panel, j, night);
+		} else {
+			drawPanel(canvas, panel, j, night);
+		}
+		scheduleAnim();
 	}
 
 	private float topOffset(int canvasHeight) {
@@ -213,6 +227,15 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		boolean hasExit = exit != null && !exit.isEmpty();
 		boolean hasLanes = lanes != null && lanes.length >= 2;
 		if (!(hasExit || (slip && (hasLanes || !Algorithms.isEmpty(dest))))) {
+			if (hasLanes && next.distanceTo <= LANES_DISTANCE_M) {
+				// no motorway sign, but the lanes are known: guide the driver with the compact lane strip
+				Junction lj = new Junction();
+				lj.compact = true;
+				lj.distance = next.distanceTo;
+				lj.turn = tt.getValue();
+				lj.lanes = lanes;
+				return lj;
+			}
 			return null;
 		}
 		Junction j = new Junction();
@@ -384,6 +407,147 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		canvas.drawRoundRect(p, r, r, stroke);
 	}
 
+	private void scheduleAnim() {
+		if (animPending || view == null || view.getView() == null) {
+			return;
+		}
+		animPending = true;
+		view.getView().postDelayed(() -> {
+			animPending = false;
+			if (view != null) {
+				view.refreshMap();
+			}
+		}, 80);
+	}
+
+	// compact strip with the lanes in perspective and an animated 3D arrow on the lanes to take
+	private void drawLaneStrip(Canvas canvas, RectF strip, Junction j, boolean night) {
+		float r = 16 * dp;
+		canvas.save();
+		path.reset();
+		path.addRoundRect(strip, r, r, Path.Direction.CW);
+		canvas.clipPath(path);
+		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(new LinearGradient(0, strip.top, 0, strip.bottom, 0xF2222A36, 0xF2121821, Shader.TileMode.CLAMP));
+		canvas.drawRect(strip, fill);
+		fill.setShader(null);
+
+		String dist = OsmAndFormatter.getFormattedDistance(j.distance, app);
+		text.setColor(0xFFFFFFFF);
+		text.setTextAlign(Paint.Align.LEFT);
+		text.setTextSize(Math.min(22 * dp, strip.height() * 0.26f));
+		canvas.drawText(dist, strip.left + 14 * dp, strip.centerY() + 7 * dp, text);
+		float distW = text.measureText(dist) + 26 * dp;
+		stroke.setStyle(Paint.Style.STROKE);
+		stroke.setPathEffect(null);
+		stroke.setColor(0x33FFFFFF);
+		stroke.setStrokeWidth(1 * dp);
+		canvas.drawLine(strip.left + distW, strip.top + 12 * dp, strip.left + distW, strip.bottom - 12 * dp, stroke);
+
+		float lanesL = strip.left + distW + 8 * dp;
+		float lanesR = strip.right - 12 * dp;
+		int n = j.lanes.length;
+		float laneW = Math.min((lanesR - lanesL) / n, 64 * dp);
+		float allW = laneW * n;
+		float startX = (lanesL + lanesR) / 2f - allW / 2f;
+		float baseY = strip.bottom - 12 * dp;
+		float topY = strip.top + 14 * dp;
+		for (int i = 0; i < n; i++) {
+			boolean active = (j.lanes[i] & 1) == 1;
+			int turn = TurnType.getPrimaryTurn(j.lanes[i]);
+			float lcx = startX + (i + 0.5f) * laneW;
+			if (i > 0) {
+				stroke.setColor(0x1AFFFFFF);
+				stroke.setStrokeWidth(1 * dp);
+				canvas.drawLine(startX + i * laneW, baseY + 2 * dp, startX + i * laneW, topY, stroke);
+			}
+			drawTurnArrow(canvas, turn, lcx, baseY, topY, laneW, active, night);
+		}
+		canvas.restore();
+		stroke.setColor(0x66000000);
+		stroke.setStrokeWidth(1.5f * dp);
+		canvas.drawRoundRect(strip, r, r, stroke);
+	}
+
+	private static float turnAngleDeg(int turn) {
+		switch (turn) {
+			case TurnType.KL: return -20;
+			case TurnType.KR: return 20;
+			case TurnType.TSLL: return -38;
+			case TurnType.TSLR: return 38;
+			case TurnType.TL: return -74;
+			case TurnType.TR: return 74;
+			case TurnType.TSHL: return -104;
+			case TurnType.TSHR: return 104;
+			case TurnType.TU: return -150;
+			case TurnType.TRU: return 150;
+			default: return 0;
+		}
+	}
+
+	// tapered arrow with a dark extruded side (3D look) and a light pulse running along it when the lane is to be taken
+	private void drawTurnArrow(Canvas canvas, int turn, float lcx, float baseY, float topY, float laneW, boolean active,
+			boolean night) {
+		double rad = Math.toRadians(turnAngleDeg(turn));
+		float len = baseY - topY;
+		float headLen = Math.min(laneW * 0.52f, len * 0.42f);
+		float reach = len - headLen;
+		float hx = lcx + (float) Math.sin(rad) * reach * 0.9f;
+		float hy = baseY - (float) Math.cos(rad) * reach * 0.92f;
+		if (turn == TurnType.TU || turn == TurnType.TRU) {
+			hy = baseY - reach * 0.35f;
+		}
+		shaft.reset();
+		shaft.moveTo(lcx, baseY);
+		shaft.quadTo(lcx, baseY - reach * 0.6f, hx, hy);
+		float pulse = active ? 1f + 0.05f * (float) Math.sin(animPhase * 2 * Math.PI) : 1f;
+		float sw = laneW * (active ? 0.24f : 0.13f) * pulse;
+		int top = active ? 0xFF35D06B : (night ? 0x66FFFFFF : 0x77FFFFFF);
+		int side = active ? 0xFF0C6B33 : 0x33000000;
+		stroke.setStyle(Paint.Style.STROKE);
+		stroke.setStrokeCap(Paint.Cap.ROUND);
+		stroke.setStrokeJoin(Paint.Join.ROUND);
+		stroke.setPathEffect(null);
+		canvas.save();
+		canvas.translate(0, 3 * dp);
+		stroke.setColor(side);
+		stroke.setStrokeWidth(sw);
+		canvas.drawPath(shaft, stroke);
+		drawArrowHead(canvas, hx, hy, rad, laneW, side, headLen, sw);
+		canvas.restore();
+		stroke.setColor(top);
+		stroke.setStrokeWidth(sw);
+		canvas.drawPath(shaft, stroke);
+		drawArrowHead(canvas, hx, hy, rad, laneW, top, headLen, sw);
+		if (active) {
+			stroke.setColor(0xAAFFFFFF);
+			stroke.setStrokeWidth(sw * 0.28f);
+			stroke.setPathEffect(new android.graphics.DashPathEffect(new float[]{5 * dp, 11 * dp}, -animPhase * 16 * dp));
+			canvas.drawPath(shaft, stroke);
+			stroke.setPathEffect(null);
+		}
+		stroke.setStrokeCap(Paint.Cap.BUTT);
+	}
+
+	private void drawArrowHead(Canvas canvas, float x, float y, double rad, float laneW, int color, float headLen, float sw) {
+		float dirx = (float) Math.sin(rad);
+		float diry = -(float) Math.cos(rad);
+		float hw = Math.max(sw * 1.35f, laneW * 0.20f);
+		float tipx = x + dirx * headLen;
+		float tipy = y + diry * headLen;
+		float nx = -diry;
+		float ny = dirx;
+		path.reset();
+		path.moveTo(tipx, tipy);
+		path.lineTo(x + nx * hw, y + ny * hw);
+		path.lineTo(x - nx * hw, y - ny * hw);
+		path.close();
+		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(null);
+		fill.setColor(color);
+		canvas.drawPath(path, fill);
+	}
+
 	private void drawDashed(Canvas canvas, float x0, float y0, float x1, float y1) {
 		// dashes shrink with distance
 		float t = 0f;
@@ -434,9 +598,19 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		fill.setColor(color);
 		canvas.drawPath(path, fill);
 		if (big) {
+			stroke.setStyle(Paint.Style.STROKE);
+			stroke.setPathEffect(null);
 			stroke.setColor(0xFFFFFFFF);
 			stroke.setStrokeWidth(1.5f * dp);
 			canvas.drawPath(path, stroke);
+			// light pulse running towards the turn
+			stroke.setColor(0xAAFFFFFF);
+			stroke.setStrokeWidth(w1 * 0.7f);
+			stroke.setStrokeCap(Paint.Cap.ROUND);
+			stroke.setPathEffect(new android.graphics.DashPathEffect(new float[]{6 * dp, 12 * dp}, -animPhase * 18 * dp));
+			canvas.drawLine(x0, y0, hx, hy, stroke);
+			stroke.setPathEffect(null);
+			stroke.setStrokeCap(Paint.Cap.BUTT);
 		}
 	}
 
