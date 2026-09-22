@@ -119,6 +119,12 @@ adb shell rm -f /sdcard/Android/data/$PKG/files/navmaster_junction_demo
 adb shell setprop debug.navmaster.jv 0
 
 # 5c) arrival panel with satellite view + restriction banner (sample data)
+# 5c bis) guided lanes with the animated 3D arrows
+adb shell settings put system user_rotation 0; sleep 3
+view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=NAVMASTER_LANES&profile=truck&force=true"
+sleep 10; shot 21_corsie_3d
+adb shell settings put system user_rotation 1; sleep 6; shot 22_corsie_orizzontale
+adb shell settings put system user_rotation 0; sleep 4
 view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=NAVMASTER_ARRIVO&profile=truck&force=true"
 sleep 10
 tap_text "mantieni attivo|keep active"; sleep 2
