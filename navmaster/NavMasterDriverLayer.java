@@ -100,6 +100,13 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private final RectF simStop = new RectF();
 	private boolean simVisible;
 	private boolean demoSimStarted;
+
+	// ---- layout: NavMaster panels keep clear of OsmAnd's buttons / widgets and of the system bars
+	public static volatile List<RectF> nmHudRects = new java.util.ArrayList<>();
+	public static volatile RectF nmCardRect;
+	private final List<RectF> placed = new java.util.ArrayList<>();
+	private long lastHudScan;
+	private int insetLeft, insetRight, insetBottom;
 	private float lastPanelH;
 
 	public NavMasterDriverLayer(@NonNull Context ctx) {
@@ -135,8 +142,12 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			isLandscapeCanvas = landscape;
 			boolean navigating = rh.isFollowingMode() && rh.isRouteCalculated();
 			boolean road = nmRoadMode(app.getSettings().getApplicationMode());
+			nmMigrate();
+			scanHud(w, h);
+			placed.clear();
 			if (!navigating || !road) {
 				applyHudBottom(0);
+				nmCardRect = null;
 				if (!navigating) {
 					return;
 				}
@@ -144,7 +155,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			if (road) {
 				float panelH = drawSygicPanel(canvas, w, h, landscape, rh, night);
 				lastPanelH = panelH;
-				applyHudBottom((int) panelH);
+				applyHudBottom((int) (h - panelH));
 			}
 			float top = topOffset(h);
 			String demo = demoName();
@@ -173,7 +184,13 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				RectF banner = landscape
 						? new RectF(w * 0.11f, bannerTop, w * 0.49f, bannerTop + 40 * dp)
 						: new RectF(64 * dp, bannerTop, w - 10 * dp, bannerTop + 40 * dp);
+				RectF fb = nmFit(banner, obstacles(), 180 * dp, 36 * dp, 6 * dp);
+				if (fb != null) {
+					banner = fb;
+					banner.bottom = banner.top + 40 * dp;
+				}
 				drawBanner(canvas, banner);
+				placed.add(banner);
 				bannerTop = banner.bottom + 6 * dp;
 				panelBottom = Math.max(panelBottom, banner.bottom);
 			}
@@ -191,7 +208,12 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 						float t = Math.max(bannerTop, top + 64 * dp);
 						panel = new RectF(10 * dp, t, w - 10 * dp, t + Math.min(w * 0.62f, h * 0.34f));
 					}
+					RectF fp = nmFit(panel, obstacles(), 200 * dp, 150 * dp, 8 * dp);
+					if (fp != null) {
+						panel = fp;
+					}
 					drawArrival(canvas, panel, tp.getLatitude(), tp.getLongitude(), rh, night);
+					placed.add(panel);
 					panelBottom = Math.max(panelBottom, panel.bottom);
 				}
 			}
@@ -203,6 +225,152 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			}
 		} catch (Throwable e) {
 			Log.e(TAG, "draw failed", e);
+		}
+	}
+
+	private void scanHud(int w, int h) {
+		long now = System.currentTimeMillis();
+		if (now - lastHudScan < 400) {
+			return;
+		}
+		lastHudScan = now;
+		MapActivity a = getMapActivity();
+		if (a == null) {
+			return;
+		}
+		List<RectF> out = new java.util.ArrayList<>();
+		try {
+			android.view.ViewGroup hud = app.getOsmandMap().getMapLayers().getMapControlsLayer().getMapHudLayout();
+			if (hud != null) {
+				collectViews(hud, out, w, h, 0);
+			}
+			View decor = a.getWindow().getDecorView();
+			android.view.WindowInsets wi = decor.getRootWindowInsets();
+			if (wi != null) {
+				int dh = decor.getHeight();
+				int dw = decor.getWidth();
+				insetBottom = Math.max(0, h - (dh - wi.getStableInsetBottom()));
+				insetLeft = Math.max(0, wi.getStableInsetLeft());
+				insetRight = Math.max(0, w - (dw - wi.getStableInsetRight()));
+			}
+		} catch (Throwable e) {
+			Log.w(TAG, "hud scan: " + e);
+		}
+		nmHudRects = out;
+	}
+
+	private void collectViews(android.view.ViewGroup g, List<RectF> out, int w, int h, int depth) {
+		int[] loc = new int[2];
+		for (int i = 0; i < g.getChildCount(); i++) {
+			View v = g.getChildAt(i);
+			if (v.getVisibility() != View.VISIBLE || v.getWidth() <= 0 || v.getHeight() <= 0 || v.getAlpha() < 0.05f) {
+				continue;
+			}
+			boolean big = v.getWidth() > w * 0.6f || v.getHeight() > h * 0.6f;
+			if (big) {
+				if (v instanceof android.view.ViewGroup && depth < 3) {
+					collectViews((android.view.ViewGroup) v, out, w, h, depth + 1);
+				}
+				continue;
+			}
+			v.getLocationInWindow(loc);
+			out.add(new RectF(loc[0], loc[1], loc[0] + v.getWidth(), loc[1] + v.getHeight()));
+		}
+	}
+
+	private List<RectF> obstacles() {
+		List<RectF> o = new java.util.ArrayList<>(nmHudRects);
+		if (nmCardRect != null) {
+			o.add(nmCardRect);
+		}
+		o.addAll(placed);
+		if (System.currentTimeMillis() - JunctionViewLayer.nmPanelShownAt < 800 && JunctionViewLayer.nmPanelRect != null) {
+			o.add(JunctionViewLayer.nmPanelRect);
+		}
+		return o;
+	}
+
+	/** Shrinks r until it no longer overlaps any obstacle; null when it would become smaller than minW x minH. */
+	public static RectF nmFit(RectF r, List<RectF> obs, float minW, float minH, float gap) {
+		RectF c = new RectF(r);
+		for (int it = 0; it < 10; it++) {
+			boolean changed = false;
+			for (RectF o : obs) {
+				if (!RectF.intersects(c, o)) {
+					continue;
+				}
+				RectF[] opts = {
+						new RectF(c.left, c.top, o.left - gap, c.bottom),
+						new RectF(o.right + gap, c.top, c.right, c.bottom),
+						new RectF(c.left, o.bottom + gap, c.right, c.bottom),
+						new RectF(c.left, c.top, c.right, o.top - gap)};
+				RectF best = null;
+				float bestA = -1;
+				for (RectF op : opts) {
+					if (op.width() >= minW && op.height() >= minH && op.width() * op.height() > bestA) {
+						bestA = op.width() * op.height();
+						best = op;
+					}
+				}
+				if (best == null) {
+					return null;
+				}
+				c = best;
+				changed = true;
+			}
+			if (!changed) {
+				break;
+			}
+		}
+		return c;
+	}
+
+	/** Used by the junction view: fits its panel between OsmAnd's widgets, buttons and the NavMaster card. */
+	public static RectF nmFitPanel(RectF r, float minW, float minH, float gap) {
+		List<RectF> o = new java.util.ArrayList<>(nmHudRects);
+		if (nmCardRect != null) {
+			o.add(nmCardRect);
+		}
+		return nmFit(r, o, minW, minH, gap);
+	}
+
+	private boolean migrated;
+
+	// one-time clean-up: no POI voice announcements / top POI bar, NavMaster keeps its own POI categories
+	private void nmMigrate() {
+		if (migrated) {
+			return;
+		}
+		migrated = true;
+		try {
+			net.osmand.plus.settings.backend.OsmandSettings st = app.getSettings();
+			net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> done =
+					st.registerBooleanPreference("nm_voice_poi_fix_v1", false).makeGlobal();
+			if (done.get()) {
+				return;
+			}
+			for (ApplicationMode m : ApplicationMode.allPossibleValues()) {
+				if (nmRoadMode(m)) {
+					st.SHOW_NEARBY_POI.setModeValue(m, false);
+					st.ANNOUNCE_NEARBY_POI.setModeValue(m, false);
+					st.SHOW_NEARBY_FAVORITES.setModeValue(m, false);
+				}
+			}
+			ensurePoiPrefs();
+			StringBuilder cats = new StringBuilder();
+			for (String id : POI_IDS) {
+				PoiUIFilter f = app.getPoiFilters().getFilterById(PoiUIFilter.STD_PREFIX + id);
+				if (f != null && app.getPoiFilters().isPoiFilterSelected(f)) {
+					cats.append(cats.length() > 0 ? "," : "").append(id);
+					app.getPoiFilters().removeSelectedPoiFilter(f);
+				}
+			}
+			if (cats.length() > 0) {
+				poiCatsPref.set(cats.toString());
+			}
+			done.set(true);
+		} catch (Throwable e) {
+			Log.w(TAG, "migrate: " + e);
 		}
 	}
 
@@ -241,8 +409,9 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			findRestriction(rh.getRoute());
 		}
 		if (restrictionText != null) {
-			restrictionText = restrictionText + "  ·  "
-					+ OsmAndFormatter.getFormattedDistance(restrictionDist, app);
+			restrictionText = restrictionText + "  ·  " + (restrictionDist < 30
+					? (italian() ? "su questa strada" : "on this road")
+					: OsmAndFormatter.getFormattedDistance(restrictionDist, app));
 		}
 	}
 
@@ -589,10 +758,14 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				if (panelPx <= 0) {
 					hud.clearExternalVisibleArea();
 				} else {
+					// panelPx = bottom limit (window y) for OsmAnd's buttons and widgets
 					int[] loc = new int[2];
 					hud.getLocationOnScreen(loc);
+					int[] win = new int[2];
+					hud.getLocationInWindow(win);
+					int bottomScreen = loc[1] + (panelPx - win[1]);
 					boolean ok = hud.setExternalVisibleArea(new android.graphics.Rect(loc[0], loc[1],
-							loc[0] + hud.getWidth(), loc[1] + hud.getHeight() - panelPx));
+							loc[0] + hud.getWidth(), Math.min(loc[1] + hud.getHeight(), bottomScreen)));
 					if (!ok && hud.getWidth() <= 0) {
 						hudBottomApplied = -1;
 					}
@@ -666,8 +839,13 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float margin = 10 * dp;
 		float cardH = (landscape ? 92 : 118) * dp;
 		float simH = simOn ? 52 * dp : 0;
-		float cardW = landscape ? Math.min(w - 2 * margin, 660 * dp) : w - 2 * margin;
-		RectF card = new RectF(w / 2f - cardW / 2f, h - margin - cardH - simH, w / 2f + cardW / 2f, h - margin);
+		float safeL = insetLeft + margin;
+		float safeR = w - insetRight - margin;
+		float safeB = h - insetBottom - margin;
+		float cardW = landscape ? Math.min(safeR - safeL, 660 * dp) : safeR - safeL;
+		float ccx = (safeL + safeR) / 2f;
+		RectF card = new RectF(ccx - cardW / 2f, safeB - cardH - simH, ccx + cardW / 2f, safeB);
+		nmCardRect = new RectF(card);
 		float radius = 22 * dp;
 		card(c, card, radius);
 		float top = card.top + simH;
@@ -821,7 +999,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		} else {
 			simVisible = false;
 		}
-		return h - card.top + 6 * dp;
+		return h - card.top + 8 * dp;
 	}
 
 	// simulation controls row inside the card: slower / speed / faster / skip 1 km / stop
@@ -989,15 +1167,42 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private void drawButtons(Canvas c, int w, int h, boolean landscape, float panelBottom) {
 		float d = 54 * dp;
 		float x = 12 * dp;
+		x = insetLeft + 12 * dp;
 		float y = landscape ? h * 0.36f : Math.max(h * 0.44f, panelBottom + 14 * dp);
-		// never under the bottom card
-		y = Math.min(y, h - lastPanelH - 2 * d - 24 * dp);
+		float maxY = (nmCardRect != null ? nmCardRect.top : h - insetBottom) - 2 * d - 20 * dp;
+		y = Math.min(y, maxY);
+		List<RectF> obs = obstacles();
+		float blockH = 2 * d + 12 * dp;
+		float found = -1;
+		for (float dy = 0; dy < h && found < 0; dy += 8 * dp) {
+			for (float cand : new float[]{y + dy, y - dy}) {
+				if (cand < 60 * dp || cand > maxY) {
+					continue;
+				}
+				RectF block = new RectF(x - 4 * dp, cand - 4 * dp, x + d + 4 * dp, cand + blockH + 4 * dp);
+				boolean free = true;
+				for (RectF o : obs) {
+					if (RectF.intersects(block, o)) {
+						free = false;
+						break;
+					}
+				}
+				if (free) {
+					found = cand;
+					break;
+				}
+			}
+		}
+		if (found >= 0) {
+			y = found;
+		}
 		reportBtn.set(x, y, x + d, y + d);
 		poiBtn.set(x, y + d + 12 * dp, x + d, y + 2 * d + 12 * dp);
 		buttonsVisible = true;
 		drawRoundButton(c, reportBtn, BANNER_RED, "!", italian() ? "Segnala" : "Report");
 		drawRoundButton(c, poiBtn, 0xFF1565C0, "P", "POI");
-		drawPoiOverlay(c, x + d + 10 * dp, y, h - lastPanelH - 50 * dp);
+		placed.add(new RectF(x, y, x + d, y + blockH));
+		drawPoiOverlay(c, x + d + 10 * dp, y, (nmCardRect != null ? nmCardRect.top : h - insetBottom) - 10 * dp);
 	}
 
 	private void drawRoundButton(Canvas c, RectF r, int color, String symbol, String label) {
@@ -1040,8 +1245,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			onPoiButton();
 			return true;
 		}
-		if (!poiBox.isEmpty() && poiBox.contains(point.x, point.y)) {
-			showPoiDialog();
+		if (onPoiListTap(point)) {
 			return true;
 		}
 		return false;
@@ -1152,42 +1356,68 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private static final String[] POI_EN = {"Fuel", "Service areas", "Rest areas", "Parking", "Repair shops",
 			"Charging", "Restaurants", "Hotels", "Toilets", "Car wash"};
 	private static final int[] POI_SECONDS = {5, 10, 20, 30};
+	private static final int POI_MAX_ROWS = 6;
 
 	private net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> poiAlwaysPref;
 	private net.osmand.plus.settings.backend.preferences.CommonPreference<Integer> poiSecondsPref;
+	private net.osmand.plus.settings.backend.preferences.CommonPreference<String> poiCatsPref;
 	private long poiShowUntil;
 	private final RectF poiBox = new RectF();
-	private long lastPoiCalc;
-	private final String[] poiNearestKey = new String[POI_IDS.length];
-	private final int[] poiNearestDist = new int[POI_IDS.length];
-	private int poiRows;
+	private final List<RectF> poiRowRects = new java.util.ArrayList<>();
+	private final List<NmPoi> poiShown = new java.util.ArrayList<>();
+	private final List<NmPoi> routePois = new java.util.ArrayList<>();
+	private String poiRouteKey;
+	private volatile boolean poiSearching;
+
+	private static class NmPoi {
+		String cat;
+		String name;
+		double lat;
+		double lon;
+		int routeIndex;
+		int dist;
+	}
 
 	private void ensurePoiPrefs() {
 		if (poiAlwaysPref == null) {
 			poiAlwaysPref = app.getSettings().registerBooleanPreference("nm_poi_overlay_always", true).makeGlobal();
 			poiSecondsPref = app.getSettings().registerIntPreference("nm_poi_overlay_seconds", 10).makeGlobal();
+			poiCatsPref = app.getSettings().registerStringPreference("nm_poi_categories", "fuel,parking,rest_area").makeGlobal();
 		}
 	}
 
-	private boolean isPoiSelected(String id) {
-		return app.getPoiFilters().isPoiFilterSelected(PoiUIFilter.STD_PREFIX + id);
+	private java.util.Set<String> selectedCats() {
+		ensurePoiPrefs();
+		java.util.Set<String> set = new java.util.LinkedHashSet<>();
+		String v = poiCatsPref.get();
+		if (!Algorithms.isEmpty(v)) {
+			for (String c : v.split(",")) {
+				if (!c.trim().isEmpty()) {
+					set.add(c.trim());
+				}
+			}
+		}
+		return set;
+	}
+
+	private String catLabel(String id) {
+		for (int i = 0; i < POI_IDS.length; i++) {
+			if (POI_IDS[i].equals(id)) {
+				return italian() ? POI_IT[i] : POI_EN[i];
+			}
+		}
+		return id;
 	}
 
 	private void onPoiButton() {
 		ensurePoiPrefs();
-		boolean anySelected = false;
-		for (String id : POI_IDS) {
-			anySelected |= isPoiSelected(id);
-		}
 		boolean overlayVisible = poiAlwaysPref.get() || System.currentTimeMillis() < poiShowUntil;
-		if (!anySelected || overlayVisible) {
+		if (selectedCats().isEmpty() || overlayVisible) {
 			showPoiDialog();
 		} else {
 			poiShowUntil = System.currentTimeMillis() + poiSecondsPref.get() * 1000L;
-			lastPoiCalc = 0;
 			if (view != null) {
 				view.refreshMap();
-				// redraw once more when the overlay expires
 				view.getView().postDelayed(() -> view.refreshMap(), poiSecondsPref.get() * 1000L + 200);
 			}
 		}
@@ -1201,6 +1431,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		ensurePoiPrefs();
 		boolean it = italian();
 		final String[] names = it ? POI_IT : POI_EN;
+		java.util.Set<String> sel = selectedCats();
 		android.widget.LinearLayout root = new android.widget.LinearLayout(a);
 		root.setOrientation(android.widget.LinearLayout.VERTICAL);
 		root.setPadding(0, px(4), 0, px(8));
@@ -1209,7 +1440,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			android.widget.CheckBox cb = new android.widget.CheckBox(a);
 			cb.setText(names[i]);
 			cb.setTextSize(17);
-			cb.setChecked(isPoiSelected(POI_IDS[i]));
+			cb.setChecked(sel.contains(POI_IDS[i]));
 			cb.setPadding(px(12), px(6), px(8), px(6));
 			cb.setMinHeight(px(52));
 			cb.setCompoundDrawablePadding(px(12));
@@ -1221,7 +1452,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			boxes[i] = cb;
 		}
 		android.widget.TextView modeTitle = new android.widget.TextView(a);
-		modeTitle.setText(it ? "Riquadro POI in sovraimpressione" : "POI overlay on the map");
+		modeTitle.setText(it ? "Elenco POI in sovraimpressione" : "POI list on the map");
 		modeTitle.setTextSize(15);
 		modeTitle.setTypeface(Typeface.DEFAULT_BOLD);
 		modeTitle.setPadding(px(24), px(16), px(24), px(4));
@@ -1267,26 +1498,20 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				.setTitle(it ? "POI lungo il percorso" : "POIs along the route")
 				.setView(sv)
 				.setPositiveButton(android.R.string.ok, (dlg, which) -> {
+					StringBuilder cats = new StringBuilder();
 					for (int i = 0; i < POI_IDS.length; i++) {
-						PoiUIFilter f = app.getPoiFilters().getFilterById(PoiUIFilter.STD_PREFIX + POI_IDS[i]);
-						if (f == null) {
-							continue;
-						}
-						boolean sel = app.getPoiFilters().isPoiFilterSelected(f);
-						if (boxes[i].isChecked() && !sel) {
-							app.getPoiFilters().addSelectedPoiFilter(f);
-						} else if (!boxes[i].isChecked() && sel) {
-							app.getPoiFilters().removeSelectedPoiFilter(f);
+						if (boxes[i].isChecked()) {
+							cats.append(cats.length() > 0 ? "," : "").append(POI_IDS[i]);
 						}
 					}
+					poiCatsPref.set(cats.toString());
 					poiAlwaysPref.set(mode.getCheckedRadioButtonId() == always.getId());
 					View chosen = secs.findViewById(secs.getCheckedRadioButtonId());
 					if (chosen != null && chosen.getTag() instanceof Integer) {
 						poiSecondsPref.set((Integer) chosen.getTag());
 					}
-					enablePoisAlongRoute();
+					poiRouteKey = null;
 					poiShowUntil = System.currentTimeMillis() + poiSecondsPref.get() * 1000L;
-					lastPoiCalc = 0;
 					if (view != null) {
 						view.refreshMap();
 					}
@@ -1295,96 +1520,191 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				.show();
 	}
 
-	// asks OsmAnd to look for the selected POI types along the route (within 300 m of it)
-	private void enablePoisAlongRoute() {
-		try {
-			ApplicationMode mode = app.getSettings().getApplicationMode();
-			((net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean>) app.getSettings().SHOW_NEARBY_POI)
-					.setModeValue(mode, true);
-			net.osmand.plus.helpers.WaypointHelper wh = app.getWaypointHelper();
-			wh.setSearchDeviationRadius(net.osmand.plus.helpers.WaypointHelper.POI, 300);
-			wh.recalculatePointsAsync(net.osmand.plus.helpers.WaypointHelper.POI, null);
-		} catch (Throwable e) {
-			Log.w(TAG, "poi along route: " + e);
-		}
-	}
-
-	private void updateNearestPois() {
-		long now = System.currentTimeMillis();
-		if (now - lastPoiCalc < 1500) {
+	// searches the chosen categories along the whole route once per route (in the background);
+	// nothing is added to the map layers and nothing is announced by voice
+	private void refreshRoutePois(RouteCalculationResult route) {
+		java.util.Set<String> cats = selectedCats();
+		String key = System.identityHashCode(route) + "|" + cats;
+		if (key.equals(poiRouteKey) || poiSearching) {
 			return;
 		}
-		lastPoiCalc = now;
-		poiRows = 0;
-		java.util.Arrays.fill(poiNearestDist, Integer.MAX_VALUE);
-		try {
-			net.osmand.plus.helpers.WaypointHelper wh = app.getWaypointHelper();
-			if (!wh.isTypeEnabled(net.osmand.plus.helpers.WaypointHelper.POI)) {
-				enablePoisAlongRoute();
-				return;
-			}
-			List<net.osmand.plus.helpers.LocationPointWrapper> pts = wh.getWaypoints(net.osmand.plus.helpers.WaypointHelper.POI);
-			for (net.osmand.plus.helpers.LocationPointWrapper w : new java.util.ArrayList<>(pts)) {
-				if (!(w.getPoint() instanceof net.osmand.plus.helpers.AmenityLocationPoint) || wh.isPointPassed(w)) {
-					continue;
+		poiRouteKey = key;
+		poiSearching = true;
+		final List<Location> locs = new java.util.ArrayList<>(route.getImmutableAllLocations());
+		executor.execute(() -> {
+			List<NmPoi> res = new java.util.ArrayList<>();
+			try {
+				java.util.Map<Location, Integer> index = new java.util.IdentityHashMap<>();
+				for (int i = 0; i < locs.size(); i++) {
+					index.put(locs.get(i), i);
 				}
-				net.osmand.data.Amenity am = ((net.osmand.plus.helpers.AmenityLocationPoint) w.getPoint()).getAmenity();
-				String sub = am.getSubType();
-				for (int i = 0; i < POI_IDS.length; i++) {
-					if (POI_IDS[i].equals(sub)) {
-						int d = wh.getRouteDistance(w);
-						if (d > 0 && d < poiNearestDist[i]) {
-							poiNearestDist[i] = d;
+				String lang = app.getSettings().MAP_PREFERRED_LOCALE.get();
+				for (String cat : cats) {
+					PoiUIFilter f = app.getPoiFilters().getFilterById(PoiUIFilter.STD_PREFIX + cat);
+					if (f == null) {
+						continue;
+					}
+					List<net.osmand.data.Amenity> list = f.searchAmenitiesOnThePath(locs, 250);
+					for (net.osmand.data.Amenity am : list) {
+						net.osmand.data.Amenity.AmenityRoutePoint rp = am.getRoutePoint();
+						Integer idx = rp != null ? index.get(rp.pointA) : null;
+						if (idx == null) {
+							continue;
 						}
+						NmPoi p = new NmPoi();
+						p.cat = cat;
+						String n = am.getName(lang);
+						p.name = Algorithms.isEmpty(n) ? catLabel(cat) : n;
+						p.lat = am.getLocation().getLatitude();
+						p.lon = am.getLocation().getLongitude();
+						p.routeIndex = idx;
+						res.add(p);
 					}
 				}
+			} catch (Throwable e) {
+				Log.w(TAG, "route pois: " + e);
 			}
-		} catch (Throwable e) {
-			Log.w(TAG, "nearest pois: " + e);
-		}
-		for (int i = 0; i < POI_IDS.length; i++) {
-			if (poiNearestDist[i] != Integer.MAX_VALUE) {
-				poiNearestKey[poiRows] = POI_IDS[i];
-				poiNearestDist[poiRows] = poiNearestDist[i];
-				poiRows++;
+			synchronized (routePois) {
+				routePois.clear();
+				routePois.addAll(res);
 			}
-		}
+			poiSearching = false;
+			Log.i(TAG, "route pois found: " + res.size());
+			if (view != null) {
+				view.refreshMap();
+			}
+		});
 	}
 
-	// Sygic-like box: next POI of each chosen category with its distance along the route
+	private List<NmPoi> nextPois(RouteCalculationResult route, int max) {
+		List<NmPoi> out = new java.util.ArrayList<>();
+		int cur = route.getCurrentRoute();
+		synchronized (routePois) {
+			for (NmPoi p : routePois) {
+				if (p.routeIndex <= cur) {
+					continue;
+				}
+				p.dist = route.getDistanceToPoint(p.routeIndex);
+				if (p.dist > 0) {
+					out.add(p);
+				}
+			}
+		}
+		java.util.Collections.sort(out, (x, y) -> Integer.compare(x.dist, y.dist));
+		return out.size() > max ? new java.util.ArrayList<>(out.subList(0, max)) : out;
+	}
+
+	// list of the nearest POIs ahead (all chosen categories mixed), tap a row to navigate there
 	private void drawPoiOverlay(Canvas c, float x, float top, float maxBottom) {
 		ensurePoiPrefs();
-		boolean any = false;
-		for (String id : POI_IDS) {
-			any |= isPoiSelected(id);
-		}
-		boolean visible = any && (poiAlwaysPref.get() || System.currentTimeMillis() < poiShowUntil);
-		if (!visible) {
+		poiRowRects.clear();
+		poiShown.clear();
+		boolean visible = !selectedCats().isEmpty() && (poiAlwaysPref.get() || System.currentTimeMillis() < poiShowUntil);
+		RouteCalculationResult route = app.getRoutingHelper().getRoute();
+		if (!visible || route == null) {
 			poiBox.setEmpty();
 			return;
 		}
-		updateNearestPois();
-		float rowH = 44 * dp;
-		int rows = Math.max(1, Math.min(poiRows, (int) ((maxBottom - top - 12 * dp) / rowH)));
-		if (rows <= 0) {
+		refreshRoutePois(route);
+		float rowH = 42 * dp;
+		float headH = 26 * dp;
+		float w = 232 * dp;
+		RectF want = new RectF(x, top, x + w, top + headH + POI_MAX_ROWS * rowH + 10 * dp);
+		want.bottom = Math.min(want.bottom, maxBottom);
+		RectF fit = nmFit(want, obstacles(), 150 * dp, headH + rowH + 10 * dp, 8 * dp);
+		if (fit == null) {
+			poiBox.setEmpty();
 			return;
 		}
-		float w = 128 * dp;
-		poiBox.set(x, top, x + w, top + rows * rowH + 12 * dp);
+		int maxRows = Math.max(1, Math.min(POI_MAX_ROWS, (int) ((fit.height() - headH - 10 * dp) / rowH)));
+		List<NmPoi> pois = nextPois(route, maxRows);
+		int rows = Math.max(1, pois.size());
+		poiBox.set(fit.left, fit.top, fit.right, fit.top + headH + rows * rowH + 10 * dp);
 		card(c, poiBox, 18 * dp);
-		if (poiRows == 0) {
-			text.setTextAlign(Paint.Align.CENTER);
-			text.setTextSize(12 * dp);
+		placed.add(new RectF(poiBox));
+		caption(c, italian() ? "lungo il percorso" : "along the route", poiBox.left + 14 * dp, poiBox.top + 18 * dp, Paint.Align.LEFT);
+		if (pois.isEmpty()) {
+			text.setTextAlign(Paint.Align.LEFT);
+			text.setTextSize(13 * dp);
 			text.setColor(0xFFB8C0CA);
-			c.drawText(italian() ? "Cerco POI…" : "Looking for POIs…", poiBox.centerX(), poiBox.top + 6 * dp + rowH / 2f + 4 * dp, text);
+			c.drawText(poiSearching ? (italian() ? "Cerco…" : "Searching…") : (italian() ? "Nessun POI nei prossimi km" : "No POIs ahead"),
+					poiBox.left + 14 * dp, poiBox.top + headH + rowH / 2f + 4 * dp, text);
 			return;
 		}
-		for (int i = 0; i < rows; i++) {
-			float y = poiBox.top + 6 * dp + i * rowH;
-			int icon = (int) (32 * dp);
-			c.drawBitmap(NavMasterIcons.get(poiNearestKey[i], icon), x + 8 * dp, y + (rowH - icon) / 2f, bmp);
-			net.osmand.plus.utils.FormattedValue fv = OsmAndFormatter.getFormattedDistanceValue(poiNearestDist[i], app);
-			drawValue(c, fv.value, fv.unit, x + 8 * dp + icon + 10 * dp, y + rowH / 2f + 8 * dp, 21 * dp, Color.WHITE, Paint.Align.LEFT);
+		for (int i = 0; i < pois.size(); i++) {
+			NmPoi p = pois.get(i);
+			float y = poiBox.top + headH + i * rowH;
+			RectF row = new RectF(poiBox.left, y, poiBox.right, y + rowH);
+			poiRowRects.add(row);
+			poiShown.add(p);
+			if (i > 0) {
+				stroke.setColor(0x14FFFFFF);
+				stroke.setStrokeWidth(1f * dp);
+				c.drawLine(row.left + 12 * dp, row.top, row.right - 12 * dp, row.top, stroke);
+			}
+			int icon = (int) (28 * dp);
+			c.drawBitmap(NavMasterIcons.get(p.cat, icon), row.left + 10 * dp, row.centerY() - icon / 2f, bmp);
+			net.osmand.plus.utils.FormattedValue fv = OsmAndFormatter.getFormattedDistanceValue(p.dist, app);
+			text.setTextSize(16 * dp);
+			Paint up = new Paint(text);
+			up.setTextSize(16 * dp * 0.45f);
+			float dw = text.measureText(fv.value) + up.measureText(fv.unit) + 2 * dp;
+			drawValue(c, fv.value, fv.unit, row.right - 12 * dp, row.centerY() + 6 * dp, 16 * dp, Color.WHITE, Paint.Align.RIGHT);
+			float nameX = row.left + 10 * dp + icon + 10 * dp;
+			float nameMax = row.right - 12 * dp - dw - 8 * dp - nameX;
+			text.setTextAlign(Paint.Align.LEFT);
+			text.setTextSize(13 * dp);
+			text.setColor(0xFFDDE3EA);
+			String n = p.name;
+			if (text.measureText(n) > nameMax) {
+				while (n.length() > 2 && text.measureText(n + "…") > nameMax) {
+					n = n.substring(0, n.length() - 1);
+				}
+				n = n + "…";
+			}
+			c.drawText(n, nameX, row.centerY() + 5 * dp, text);
 		}
+	}
+
+	private boolean onPoiListTap(PointF pt) {
+		if (poiBox.isEmpty() || !poiBox.contains(pt.x, pt.y)) {
+			return false;
+		}
+		for (int i = 0; i < poiRowRects.size(); i++) {
+			if (poiRowRects.get(i).contains(pt.x, pt.y)) {
+				showPoiActions(poiShown.get(i));
+				return true;
+			}
+		}
+		showPoiDialog();
+		return true;
+	}
+
+	// ask whether to go there: next stop (intermediate point) or new destination
+	private void showPoiActions(NmPoi p) {
+		MapActivity a = getMapActivity();
+		if (a == null) {
+			return;
+		}
+		boolean it = italian();
+		String dist = OsmAndFormatter.getFormattedDistance(p.dist, app);
+		android.widget.TextView msg = iconRow(a, p.cat, catLabel(p.cat) + "\n" + (it ? "tra " : "in ") + dist
+				+ (it ? " lungo il percorso" : " along the route"));
+		msg.setBackground(null);
+		net.osmand.data.LatLon ll = new net.osmand.data.LatLon(p.lat, p.lon);
+		net.osmand.data.PointDescription pd = new net.osmand.data.PointDescription(net.osmand.data.PointDescription.POINT_TYPE_POI, p.name);
+		new AlertDialog.Builder(a)
+				.setTitle(p.name)
+				.setView(msg)
+				.setPositiveButton(it ? "Aggiungi come tappa" : "Add as next stop", (d, w) -> {
+					app.getTargetPointsHelper().navigateToPoint(ll, true, 0, pd);
+					Toast.makeText(a, (it ? "Tappa aggiunta: " : "Stop added: ") + p.name, Toast.LENGTH_SHORT).show();
+				})
+				.setNeutralButton(it ? "Nuova destinazione" : "New destination", (d, w) -> {
+					app.getTargetPointsHelper().navigateToPoint(ll, true, -1, pd);
+					Toast.makeText(a, (it ? "Nuova destinazione: " : "New destination: ") + p.name, Toast.LENGTH_SHORT).show();
+				})
+				.setNegativeButton(android.R.string.cancel, null)
+				.show();
 	}
 }
