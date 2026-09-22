@@ -574,7 +574,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float bottom = bottomLimit(h);
 		float barH = 58 * dp;
 		float left = 74 * dp;
-		float cellW = Math.min(112 * dp, (w - 96 * dp - left) / cells);
+		float cellW = Math.min(112 * dp, (w - 116 * dp - left) / cells);
 		RectF bar = new RectF(left, bottom - barH, left + cellW * cells, bottom);
 		fill.setStyle(Paint.Style.FILL);
 		fill.setColor(0x55000000);
