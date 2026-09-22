@@ -90,6 +90,16 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private String restrictionText;
 	private int restrictionDist;
 	private long lastLog;
+	private boolean isLandscapeCanvas;
+	private int hudBottomApplied = -1;
+	private net.osmand.plus.views.mapwidgets.TurnDrawable turnDrawable;
+	private int turnDrawableSize;
+	private final RectF simSlower = new RectF();
+	private final RectF simFaster = new RectF();
+	private final RectF simSkip = new RectF();
+	private final RectF simStop = new RectF();
+	private boolean simVisible;
+	private boolean demoSimStarted;
 
 	public NavMasterDriverLayer(@NonNull Context ctx) {
 		super(ctx);
@@ -121,15 +131,30 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			int w = canvas.getWidth();
 			int h = canvas.getHeight();
 			boolean landscape = w > h;
+			isLandscapeCanvas = landscape;
 			boolean navigating = rh.isFollowingMode() && rh.isRouteCalculated();
-			if (!navigating) {
-				return;
+			boolean road = nmRoadMode(app.getSettings().getApplicationMode());
+			if (!navigating || !road) {
+				applyHudBottom(0);
+				if (!navigating) {
+					return;
+				}
 			}
-			if (nmRoadMode(app.getSettings().getApplicationMode())) {
-				drawDataBar(canvas, w, h, rh, night);
+			if (road) {
+				float panelH = drawSygicPanel(canvas, w, h, landscape, rh, night);
+				applyHudBottom((int) panelH);
 			}
 			float top = topOffset(h);
 			String demo = demoName();
+			if (demo != null && demo.contains("NAVMASTER_SIM") && !demoSimStarted) {
+				// preview/test hook: start the route simulation automatically
+				demoSimStarted = true;
+				net.osmand.plus.simulation.OsmAndLocationSimulation sim = app.getLocationProvider().getLocationSimulation();
+				MapActivity a = getMapActivity();
+				if (sim != null && a != null && !sim.isRouteAnimating()) {
+					a.runOnUiThread(() -> sim.startStopRouteAnimation(a));
+				}
+			}
 
 			float panelBottom = 0;
 			if (System.currentTimeMillis() - JunctionViewLayer.nmPanelShownAt < 800) {
@@ -195,7 +220,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				return loc[1] + topPanel.getHeight() + 6 * dp;
 			}
 		}
-		return canvasHeight * 0.16f;
+		return 30 * dp + (isLandscapeCanvas ? 40 * dp : 0);
 	}
 
 	// ---------------------------------------------------------------- restrictions
@@ -547,6 +572,266 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		return null;
 	}
 
+	// ---------------------------------------------------------------- Sygic-style bottom panel
+
+	// keeps OsmAnd's map buttons and widgets above the NavMaster bottom panel
+	private void applyHudBottom(int panelPx) {
+		if (panelPx == hudBottomApplied) {
+			return;
+		}
+		hudBottomApplied = panelPx;
+		MapActivity a = getMapActivity();
+		if (a == null) {
+			return;
+		}
+		a.runOnUiThread(() -> {
+			try {
+				net.osmand.plus.views.controls.MapHudLayout hud =
+						app.getOsmandMap().getMapLayers().getMapControlsLayer().getMapHudLayout();
+				if (hud == null) {
+					return;
+				}
+				if (panelPx <= 0) {
+					hud.clearExternalVisibleArea();
+				} else {
+					int[] loc = new int[2];
+					hud.getLocationOnScreen(loc);
+					boolean ok = hud.setExternalVisibleArea(new android.graphics.Rect(loc[0], loc[1],
+							loc[0] + hud.getWidth(), loc[1] + hud.getHeight() - panelPx));
+					if (!ok && hud.getWidth() <= 0) {
+						hudBottomApplied = -1;
+					}
+				}
+			} catch (Throwable e) {
+				Log.w(TAG, "hud area: " + e);
+			}
+		});
+	}
+
+	private String[] timeLeft(int s) {
+		if (s >= 3600) {
+			return new String[]{(s / 3600) + ":" + String.format(Locale.US, "%02d", (s % 3600) / 60), "h"};
+		}
+		return new String[]{String.valueOf(Math.max(0, (s + 30) / 60)), "min"};
+	}
+
+	private void drawValue(Canvas c, String value, String unit, float cx, float baseline, float size, int color, Paint.Align align) {
+		text.setTextSize(size);
+		Paint up = new Paint(text);
+		up.setTextSize(size * 0.45f);
+		up.setTextAlign(Paint.Align.LEFT);
+		float vw = text.measureText(value);
+		float uw = unit.isEmpty() ? 0 : up.measureText(unit) + 2 * dp;
+		float x = align == Paint.Align.CENTER ? cx - (vw + uw) / 2f : (align == Paint.Align.RIGHT ? cx - vw - uw : cx);
+		text.setTextAlign(Paint.Align.LEFT);
+		text.setColor(color);
+		c.drawText(value, x, baseline, text);
+		if (!unit.isEmpty()) {
+			up.setColor(0xFFB8C0CA);
+			c.drawText(unit, x + vw + 2 * dp, baseline, up);
+		}
+	}
+
+	private float drawSygicPanel(Canvas c, int w, int h, boolean landscape, RoutingHelper rh, boolean night) {
+		boolean it = italian();
+		float panelH = (landscape ? 84 : 112) * dp;
+		RectF panel = new RectF(0, h - panelH, w, h);
+		fill.setStyle(Paint.Style.FILL);
+		fill.setColor(0xF0121519);
+		c.drawRect(panel, fill);
+
+		// route progress strip: whole remaining route, ticks for the next turns, red tick for the next limit
+		float stripH = 6 * dp;
+		RectF strip = new RectF(0, panel.top, w, panel.top + stripH);
+		fill.setColor(0xFF2E343C);
+		c.drawRect(strip, fill);
+		int left = rh.getLeftDistance();
+		RouteCalculationResult route = rh.getRoute();
+		fill.setColor(0xFF8E44AD);
+		c.drawRect(strip.left, strip.top + stripH * 0.3f, strip.right, strip.bottom - stripH * 0.3f, fill);
+		if (route != null && left > 0) {
+			List<net.osmand.plus.routing.RouteDirectionInfo> dirs = rh.getRouteDirections();
+			if (dirs != null) {
+				fill.setColor(0xFFFFD23F);
+				for (net.osmand.plus.routing.RouteDirectionInfo di : dirs) {
+					int toEnd = route.getDistanceFromPoint(di.routePointOffset);
+					if (toEnd <= 0 || toEnd >= left) {
+						continue;
+					}
+					float x = strip.left + (1f - toEnd / (float) left) * strip.width();
+					c.drawRect(x - 5 * dp, strip.top, x + 5 * dp, strip.bottom, fill);
+				}
+			}
+			if (restrictionText != null && restrictionDist < left) {
+				float x = strip.left + restrictionDist / (float) left * strip.width();
+				fill.setColor(BANNER_RED);
+				c.drawRect(x - 4 * dp, strip.top - 2 * dp, x + 4 * dp, strip.bottom + 2 * dp, fill);
+			}
+		}
+
+		float colW = landscape ? Math.min(w * 0.22f, 190 * dp) : w * 0.27f;
+		float top = strip.bottom;
+		float rowH = (panel.bottom - top) / 2f;
+		int leftS = rh.getLeftTime();
+		String eta = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(System.currentTimeMillis() + leftS * 1000L));
+		net.osmand.plus.utils.FormattedValue dist = OsmAndFormatter.getFormattedDistanceValue(left, app);
+		Location me = app.getLocationProvider().getLastKnownLocation();
+		float mps = me != null && me.hasSpeed() ? me.getSpeed() : 0;
+		net.osmand.plus.utils.FormattedValue sp = OsmAndFormatter.getFormattedSpeedValue(mps, app);
+		float limit = rh.getCurrentMaxSpeed();
+		boolean speeding = limit > 0 && mps > limit + 1.5f;
+		String[] tl = timeLeft(leftS);
+		float big = (landscape ? 26 : 25) * dp;
+		float pad = 12 * dp;
+		drawValue(c, eta, "", pad, top + rowH * 0.5f + big * 0.36f, big, Color.WHITE, Paint.Align.LEFT);
+		drawValue(c, dist.value, dist.unit, pad, top + rowH * 1.5f + big * 0.36f, big * 0.86f, Color.WHITE, Paint.Align.LEFT);
+		drawValue(c, sp.value, sp.unit, w - pad, top + rowH * 0.5f + big * 0.36f, big, speeding ? 0xFFFF5252 : Color.WHITE, Paint.Align.RIGHT);
+		drawValue(c, tl[0], tl[1], w - pad, top + rowH * 1.5f + big * 0.36f, big * 0.86f, Color.WHITE, Paint.Align.RIGHT);
+		stroke.setColor(0xFF333A43);
+		stroke.setStrokeWidth(1.2f * dp);
+		c.drawLine(colW, top + 8 * dp, colW, panel.bottom - 8 * dp, stroke);
+		c.drawLine(w - colW, top + 8 * dp, w - colW, panel.bottom - 8 * dp, stroke);
+
+		// centre: next manoeuvre arrow + distance
+		net.osmand.plus.routing.NextDirectionInfo next = rh.getNextRouteDirectionInfo(new net.osmand.plus.routing.NextDirectionInfo(), true);
+		float cx = w / 2f;
+		float cTop = top;
+		float cH = panel.bottom - top;
+		if (next != null && next.directionInfo != null && next.directionInfo.getTurnType() != null) {
+			int size = (int) Math.min(cH * 0.78f, 70 * dp);
+			MapActivity a = getMapActivity();
+			if (a != null) {
+				if (turnDrawable == null || turnDrawableSize != size) {
+					turnDrawable = new net.osmand.plus.views.mapwidgets.TurnDrawable(a, false);
+					turnDrawable.setBounds(0, 0, size, size);
+					turnDrawableSize = size;
+					turnDrawable.setRouteDirectionColor(android.R.color.white);
+					turnDrawable.updateColors(true);
+				}
+				turnDrawable.setTurnType(next.directionInfo.getTurnType());
+				net.osmand.plus.utils.FormattedValue nd = OsmAndFormatter.getFormattedDistanceValue(next.distanceTo, app);
+				float valueSize = (landscape ? 40 : 38) * dp;
+				text.setTextSize(valueSize);
+				float vw = text.measureText(nd.value);
+				float total = size + 8 * dp + vw;
+				float x0 = cx - total / 2f;
+				c.save();
+				c.translate(x0, cTop + (cH - size) / 2f);
+				turnDrawable.draw(c);
+				c.restore();
+				drawValue(c, nd.value, "", x0 + size + 8 * dp, cTop + cH * 0.52f + valueSize * 0.30f, valueSize, Color.WHITE, Paint.Align.LEFT);
+				text.setTextSize(12 * dp);
+				text.setTextAlign(Paint.Align.CENTER);
+				text.setColor(0xFFB8C0CA);
+				String unitName = "km".equals(nd.unit) ? (it ? "chilometri" : "kilometres")
+						: ("m".equals(nd.unit) ? (it ? "metri" : "metres") : nd.unit);
+				c.drawText(unitName, x0 + size + 8 * dp + vw / 2f, cTop + cH * 0.52f + valueSize * 0.30f + 16 * dp, text);
+			}
+		}
+
+		// current street label above the panel
+		try {
+			net.osmand.plus.routing.CurrentStreetName sn = rh.getCurrentName(
+					next != null ? next : new net.osmand.plus.routing.NextDirectionInfo(), false);
+			String street = sn != null ? sn.text : null;
+			if (!Algorithms.isEmpty(street)) {
+				text.setTextSize(15 * dp);
+				text.setTextAlign(Paint.Align.CENTER);
+				float tw = Math.min(text.measureText(street), w - 140 * dp);
+				RectF lbl = new RectF(cx - tw / 2f - 10 * dp, panel.top - 34 * dp, cx + tw / 2f + 10 * dp, panel.top - 6 * dp);
+				fill.setColor(0xE6121519);
+				c.drawRoundRect(lbl, 6 * dp, 6 * dp, fill);
+				text.setColor(Color.WHITE);
+				c.save();
+				c.clipRect(lbl);
+				c.drawText(street, cx, lbl.bottom - 9 * dp, text);
+				c.restore();
+			}
+		} catch (Throwable e) {
+			// street name is optional
+		}
+
+		drawSimControls(c, w, panel.top - 44 * dp);
+		return panelH;
+	}
+
+	// simulation controls: slower / speed / faster / skip 1 km / stop
+	private void drawSimControls(Canvas c, int w, float bottom) {
+		simVisible = false;
+		net.osmand.plus.simulation.OsmAndLocationSimulation sim = app.getLocationProvider().getLocationSimulation();
+		if (sim == null || !sim.isRouteAnimating()) {
+			return;
+		}
+		simVisible = true;
+		float d = 46 * dp;
+		float gap = 8 * dp;
+		float total = 4 * d + 3 * gap + 70 * dp;
+		float x = w / 2f - total / 2f;
+		float top = bottom - d;
+		boolean it = italian();
+		simSlower.set(x, top, x + d, bottom);
+		x += d + gap;
+		RectF label = new RectF(x, top, x + 70 * dp, bottom);
+		x += 70 * dp + gap;
+		simFaster.set(x, top, x + d, bottom);
+		x += d + gap;
+		simSkip.set(x, top, x + d, bottom);
+		x += d + gap;
+		simStop.set(x, top, x + d, bottom);
+		fill.setColor(0xE6121519);
+		c.drawRoundRect(new RectF(simSlower.left - 6 * dp, top - 6 * dp, simStop.right + 6 * dp, bottom + 6 * dp), 12 * dp, 12 * dp, fill);
+		simButton(c, simSlower, "−");
+		simButton(c, simFaster, "+");
+		simButton(c, simSkip, "»");
+		simButton(c, simStop, "■");
+		text.setTextAlign(Paint.Align.CENTER);
+		text.setColor(Color.WHITE);
+		text.setTextSize(17 * dp);
+		float f = net.osmand.plus.simulation.OsmAndLocationSimulation.nmSpeedFactor;
+		String fs = f == Math.round(f) ? String.valueOf(Math.round(f)) : String.valueOf(f);
+		c.drawText("×" + fs, label.centerX(), label.centerY() + 2 * dp, text);
+		text.setTextSize(9 * dp);
+		text.setColor(0xFFB8C0CA);
+		c.drawText(it ? "simulazione" : "simulation", label.centerX(), label.bottom - 5 * dp, text);
+	}
+
+	private void simButton(Canvas c, RectF r, String s) {
+		fill.setColor(0xFF2E343C);
+		c.drawRoundRect(r, 10 * dp, 10 * dp, fill);
+		text.setTextAlign(Paint.Align.CENTER);
+		text.setColor(Color.WHITE);
+		text.setTextSize(24 * dp);
+		c.drawText(s, r.centerX(), r.centerY() + 8 * dp, text);
+	}
+
+	private boolean onSimTap(PointF p) {
+		if (!simVisible) {
+			return false;
+		}
+		float pad = 4 * dp;
+		float f = net.osmand.plus.simulation.OsmAndLocationSimulation.nmSpeedFactor;
+		if (inflate(simSlower, pad).contains(p.x, p.y)) {
+			net.osmand.plus.simulation.OsmAndLocationSimulation.nmSpeedFactor = Math.max(0.5f, f / 2f);
+		} else if (inflate(simFaster, pad).contains(p.x, p.y)) {
+			net.osmand.plus.simulation.OsmAndLocationSimulation.nmSpeedFactor = Math.min(16f, f * 2f);
+		} else if (inflate(simSkip, pad).contains(p.x, p.y)) {
+			net.osmand.plus.simulation.OsmAndLocationSimulation.nmSkipMeters = 1000f;
+		} else if (inflate(simStop, pad).contains(p.x, p.y)) {
+			MapActivity a = getMapActivity();
+			net.osmand.plus.simulation.OsmAndLocationSimulation sim = app.getLocationProvider().getLocationSimulation();
+			if (sim != null && sim.isRouteAnimating()) {
+				sim.startStopRouteAnimation(a);
+			}
+			net.osmand.plus.simulation.OsmAndLocationSimulation.nmSpeedFactor = 1f;
+		} else {
+			return false;
+		}
+		if (view != null) {
+			view.refreshMap();
+		}
+		return true;
+	}
+
 	// ---------------------------------------------------------------- Garmin-style data bar
 
 	private static boolean nmRoadMode(ApplicationMode m) {
@@ -665,6 +950,9 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 
 	@Override
 	public boolean onSingleTap(@NonNull PointF point, @NonNull RotatedTileBox tileBox) {
+		if (onSimTap(point)) {
+			return true;
+		}
 		if (!buttonsVisible) {
 			return false;
 		}
