@@ -64,6 +64,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	private long lastDemoCheck;
 	private long lastLog;
 	private boolean demo;
+	private boolean demoLanes;
 
 	public JunctionViewLayer(@NonNull Context ctx) {
 		super(ctx);
@@ -177,7 +178,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 			File dir = app.getAppPath(null);
 			demo = (dir != null && new File(dir, DEMO_FILE).exists()) || "1".equals(sysProp("debug.navmaster.jv"));
 			net.osmand.plus.helpers.TargetPoint tp = app.getTargetPointsHelper().getPointToNavigate();
-			if (tp != null && tp.getOnlyName() != null && tp.getOnlyName().contains("NAVMASTER_DEMO")) {
+			String name = tp != null && tp.getOnlyName() != null ? tp.getOnlyName() : "";
+			demoLanes = name.contains("NAVMASTER_LANES");
+			if (name.contains("NAVMASTER_DEMO") || demoLanes) {
 				demo = true;
 			}
 		}
@@ -194,6 +197,15 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	}
 
 	private Junction demoJunction() {
+		if (demoLanes) {
+			// compact guided lanes: keep left, straight (to take), straight (to take), turn right
+			Junction lj = new Junction();
+			lj.compact = true;
+			lj.distance = 180;
+			lj.turn = TurnType.C;
+			lj.lanes = new int[] {TurnType.TL << 1, (TurnType.C << 1) | 1, (TurnType.C << 1) | 1, TurnType.TR << 1};
+			return lj;
+		}
 		Junction j = new Junction();
 		j.distance = 450;
 		j.turn = TurnType.KR;
