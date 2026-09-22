@@ -145,7 +145,8 @@ public class JunctionViewLayer extends OsmandMapLayer {
 				return loc[1] + topPanel.getHeight() + 6 * dp;
 			}
 		}
-		return canvasHeight * 0.16f;
+		// no top widgets (NavMaster bottom panel mode): just below the first row of map buttons
+		return 30 * dp + (app.getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ? 40 * dp : 0);
 	}
 
 	private boolean demoMode() {
