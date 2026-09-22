@@ -100,6 +100,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private final RectF simStop = new RectF();
 	private boolean simVisible;
 	private boolean demoSimStarted;
+	private float lastPanelH;
 
 	public NavMasterDriverLayer(@NonNull Context ctx) {
 		super(ctx);
@@ -142,6 +143,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			}
 			if (road) {
 				float panelH = drawSygicPanel(canvas, w, h, landscape, rh, night);
+				lastPanelH = panelH;
 				applyHudBottom((int) panelH);
 			}
 			float top = topOffset(h);
@@ -184,7 +186,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				if (tp != null) {
 					RectF panel;
 					if (landscape) {
-						panel = new RectF(w * 0.50f, top, w - 10 * dp, Math.min(h - 150 * dp, top + (w * 0.5f) * 0.70f));
+						panel = new RectF(w * 0.50f, top, w - 70 * dp, Math.min(h - lastPanelH - 50 * dp, top + (w * 0.5f) * 0.70f));
 					} else {
 						float t = Math.max(bannerTop, top + 64 * dp);
 						panel = new RectF(10 * dp, t, w - 10 * dp, t + Math.min(w * 0.62f, h * 0.34f));
@@ -766,7 +768,11 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float d = 46 * dp;
 		float gap = 8 * dp;
 		float total = 4 * d + 3 * gap + 70 * dp;
-		float x = w / 2f - total / 2f;
+		float x = 14 * dp;
+		if (x + total > w - 130 * dp) {
+			// portrait: keep clear of the zoom / 3D buttons on the right
+			bottom -= 124 * dp;
+		}
 		float top = bottom - d;
 		boolean it = italian();
 		simSlower.set(x, top, x + d, bottom);
@@ -930,6 +936,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		buttonsVisible = true;
 		drawRoundButton(c, reportBtn, BANNER_RED, "!", italian() ? "Segnala" : "Report");
 		drawRoundButton(c, poiBtn, 0xFF1565C0, "P", "POI");
+		drawPoiOverlay(c, x + d + 10 * dp, y, h - lastPanelH - 50 * dp);
 	}
 
 	private void drawRoundButton(Canvas c, RectF r, int color, String symbol, String label) {
@@ -962,6 +969,19 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			return true;
 		}
 		if (inflate(poiBtn, pad).contains(point.x, point.y)) {
+			onPoiButton();
+			return true;
+		}
+		if (!poiBox.isEmpty() && poiBox.contains(point.x, point.y)) {
+			showPoiDialog();
+			return true;
+		}
+		return false;
+	}
+
+	@Override
+	public boolean onLongPressEvent(@NonNull PointF point, @NonNull RotatedTileBox tileBox) {
+		if (buttonsVisible && inflate(poiBtn, 6 * dp).contains(point.x, point.y)) {
 			showPoiDialog();
 			return true;
 		}
@@ -979,6 +999,32 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private static final int[] REPORT_COLORS = {0xFFD32F2F, 0xFFF57C00, 0xFFF9A825, 0xFFF57C00,
 			0xFFD32F2F, 0xFF6A1B9A, 0xFF1565C0, 0xFFC62828, 0xFFC62828, 0xFF424242};
 
+	private static final String[] REPORT_KEYS = {"accident", "works", "obstacle", "stopped", "traffic",
+			"camera", "police", "no_trucks", "limit", "closed"};
+
+	private int px(float v) {
+		return Math.round(v * dp);
+	}
+
+	private android.graphics.drawable.Drawable iconDrawable(MapActivity a, String key, int sizeDp) {
+		return new android.graphics.drawable.BitmapDrawable(a.getResources(), NavMasterIcons.get(key, px(sizeDp)));
+	}
+
+	private android.widget.TextView iconRow(MapActivity a, String key, String label) {
+		android.widget.TextView tv = new android.widget.TextView(a);
+		tv.setText(label);
+		tv.setTextSize(17);
+		tv.setGravity(android.view.Gravity.CENTER_VERTICAL);
+		tv.setPadding(px(20), px(10), px(20), px(10));
+		tv.setCompoundDrawablePadding(px(16));
+		tv.setCompoundDrawablesWithIntrinsicBounds(iconDrawable(a, key, 36), null, null, null);
+		tv.setMinHeight(px(56));
+		android.util.TypedValue tvv = new android.util.TypedValue();
+		a.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, tvv, true);
+		tv.setBackgroundResource(tvv.resourceId);
+		return tv;
+	}
+
 	private void showReportDialog() {
 		MapActivity a = getMapActivity();
 		Location me = app.getLocationProvider().getLastKnownLocation();
@@ -990,11 +1036,25 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			return;
 		}
 		final String[] items = italian() ? REPORTS_IT : REPORTS_EN;
-		new AlertDialog.Builder(a)
+		android.widget.LinearLayout list = new android.widget.LinearLayout(a);
+		list.setOrientation(android.widget.LinearLayout.VERTICAL);
+		android.widget.ScrollView sv = new android.widget.ScrollView(a);
+		sv.addView(list);
+		AlertDialog dlg = new AlertDialog.Builder(a)
 				.setTitle(italian() ? "Segnala sulla strada" : "Report on the road")
-				.setItems(items, (dlg, which) -> saveReport(a, me, items[which], REPORT_COLORS[which]))
+				.setView(sv)
 				.setNegativeButton(android.R.string.cancel, null)
-				.show();
+				.create();
+		for (int i = 0; i < items.length; i++) {
+			final int which = i;
+			android.widget.TextView row = iconRow(a, "rep_" + REPORT_KEYS[i], items[i]);
+			row.setOnClickListener(v -> {
+				dlg.dismiss();
+				saveReport(a, me, items[which], REPORT_COLORS[which]);
+			});
+			list.addView(row);
+		}
+		dlg.show();
 	}
 
 	private void saveReport(MapActivity a, Location me, String type, int color) {
@@ -1015,26 +1075,129 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		}
 	}
 
+	// ---------------------------------------------------------------- POIs along the route
+
 	private static final String[] POI_IDS = {"fuel", "services", "rest_area", "parking", "car_repair",
 			"charging_station", "restaurant", "hotel", "toilets", "car_wash"};
 	private static final String[] POI_IT = {"Carburante", "Aree di servizio", "Aree di sosta", "Parcheggi", "Officine",
 			"Ricarica elettrica", "Ristoranti", "Hotel", "Servizi igienici", "Autolavaggi"};
 	private static final String[] POI_EN = {"Fuel", "Service areas", "Rest areas", "Parking", "Repair shops",
 			"Charging", "Restaurants", "Hotels", "Toilets", "Car wash"};
+	private static final int[] POI_SECONDS = {5, 10, 20, 30};
+
+	private net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> poiAlwaysPref;
+	private net.osmand.plus.settings.backend.preferences.CommonPreference<Integer> poiSecondsPref;
+	private long poiShowUntil;
+	private final RectF poiBox = new RectF();
+	private long lastPoiCalc;
+	private final String[] poiNearestKey = new String[POI_IDS.length];
+	private final int[] poiNearestDist = new int[POI_IDS.length];
+	private int poiRows;
+
+	private void ensurePoiPrefs() {
+		if (poiAlwaysPref == null) {
+			poiAlwaysPref = app.getSettings().registerBooleanPreference("nm_poi_overlay_always", true).makeGlobal();
+			poiSecondsPref = app.getSettings().registerIntPreference("nm_poi_overlay_seconds", 10).makeGlobal();
+		}
+	}
+
+	private boolean isPoiSelected(String id) {
+		return app.getPoiFilters().isPoiFilterSelected(PoiUIFilter.STD_PREFIX + id);
+	}
+
+	private void onPoiButton() {
+		ensurePoiPrefs();
+		boolean anySelected = false;
+		for (String id : POI_IDS) {
+			anySelected |= isPoiSelected(id);
+		}
+		boolean overlayVisible = poiAlwaysPref.get() || System.currentTimeMillis() < poiShowUntil;
+		if (!anySelected || overlayVisible) {
+			showPoiDialog();
+		} else {
+			poiShowUntil = System.currentTimeMillis() + poiSecondsPref.get() * 1000L;
+			lastPoiCalc = 0;
+			if (view != null) {
+				view.refreshMap();
+				// redraw once more when the overlay expires
+				view.getView().postDelayed(() -> view.refreshMap(), poiSecondsPref.get() * 1000L + 200);
+			}
+		}
+	}
 
 	private void showPoiDialog() {
 		MapActivity a = getMapActivity();
 		if (a == null) {
 			return;
 		}
-		final String[] names = italian() ? POI_IT : POI_EN;
-		final boolean[] checked = new boolean[POI_IDS.length];
+		ensurePoiPrefs();
+		boolean it = italian();
+		final String[] names = it ? POI_IT : POI_EN;
+		android.widget.LinearLayout root = new android.widget.LinearLayout(a);
+		root.setOrientation(android.widget.LinearLayout.VERTICAL);
+		root.setPadding(0, px(4), 0, px(8));
+		final android.widget.CheckBox[] boxes = new android.widget.CheckBox[POI_IDS.length];
 		for (int i = 0; i < POI_IDS.length; i++) {
-			checked[i] = app.getPoiFilters().isPoiFilterSelected(PoiUIFilter.STD_PREFIX + POI_IDS[i]);
+			android.widget.CheckBox cb = new android.widget.CheckBox(a);
+			cb.setText(names[i]);
+			cb.setTextSize(17);
+			cb.setChecked(isPoiSelected(POI_IDS[i]));
+			cb.setPadding(px(12), px(6), px(8), px(6));
+			cb.setMinHeight(px(52));
+			cb.setCompoundDrawablePadding(px(12));
+			cb.setCompoundDrawablesWithIntrinsicBounds(null, null, iconDrawable(a, POI_IDS[i], 34), null);
+			android.widget.LinearLayout.LayoutParams lp = new android.widget.LinearLayout.LayoutParams(
+					android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+			lp.setMargins(px(16), 0, px(20), 0);
+			root.addView(cb, lp);
+			boxes[i] = cb;
 		}
+		android.widget.TextView modeTitle = new android.widget.TextView(a);
+		modeTitle.setText(it ? "Riquadro POI in sovraimpressione" : "POI overlay on the map");
+		modeTitle.setTextSize(15);
+		modeTitle.setTypeface(Typeface.DEFAULT_BOLD);
+		modeTitle.setPadding(px(24), px(16), px(24), px(4));
+		root.addView(modeTitle);
+		android.widget.RadioGroup mode = new android.widget.RadioGroup(a);
+		mode.setPadding(px(20), 0, px(20), 0);
+		android.widget.RadioButton always = new android.widget.RadioButton(a);
+		always.setId(View.generateViewId());
+		always.setText(it ? "Mostra sempre" : "Always show");
+		android.widget.RadioButton onDemand = new android.widget.RadioButton(a);
+		onDemand.setId(View.generateViewId());
+		onDemand.setText(it ? "Mostra solo quando tocco «POI»" : "Show only when I tap «POI»");
+		mode.addView(always);
+		mode.addView(onDemand);
+		mode.check(poiAlwaysPref.get() ? always.getId() : onDemand.getId());
+		root.addView(mode);
+		android.widget.TextView secTitle = new android.widget.TextView(a);
+		secTitle.setText(it ? "Durata quando richiesto" : "Duration when requested");
+		secTitle.setTextSize(14);
+		secTitle.setPadding(px(24), px(8), px(24), 0);
+		root.addView(secTitle);
+		android.widget.RadioGroup secs = new android.widget.RadioGroup(a);
+		secs.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+		secs.setPadding(px(20), 0, px(20), 0);
+		int checkedSec = -1;
+		for (int sec : POI_SECONDS) {
+			android.widget.RadioButton rb = new android.widget.RadioButton(a);
+			rb.setId(View.generateViewId());
+			rb.setText(sec + " s");
+			rb.setTag(sec);
+			secs.addView(rb);
+			if (sec == poiSecondsPref.get()) {
+				checkedSec = rb.getId();
+			}
+		}
+		if (checkedSec != -1) {
+			secs.check(checkedSec);
+		}
+		root.addView(secs);
+		android.widget.ScrollView sv = new android.widget.ScrollView(a);
+		sv.addView(root);
 		new AlertDialog.Builder(a)
-				.setTitle(italian() ? "POI da mostrare lungo il percorso" : "POIs to show along the route")
-				.setMultiChoiceItems(names, checked, (dlg, which, isChecked) -> checked[which] = isChecked)
+				.setTitle(it ? "POI lungo il percorso" : "POIs along the route")
+				.setView(sv)
 				.setPositiveButton(android.R.string.ok, (dlg, which) -> {
 					for (int i = 0; i < POI_IDS.length; i++) {
 						PoiUIFilter f = app.getPoiFilters().getFilterById(PoiUIFilter.STD_PREFIX + POI_IDS[i]);
@@ -1042,17 +1205,122 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 							continue;
 						}
 						boolean sel = app.getPoiFilters().isPoiFilterSelected(f);
-						if (checked[i] && !sel) {
+						if (boxes[i].isChecked() && !sel) {
 							app.getPoiFilters().addSelectedPoiFilter(f);
-						} else if (!checked[i] && sel) {
+						} else if (!boxes[i].isChecked() && sel) {
 							app.getPoiFilters().removeSelectedPoiFilter(f);
 						}
 					}
+					poiAlwaysPref.set(mode.getCheckedRadioButtonId() == always.getId());
+					View chosen = secs.findViewById(secs.getCheckedRadioButtonId());
+					if (chosen != null && chosen.getTag() instanceof Integer) {
+						poiSecondsPref.set((Integer) chosen.getTag());
+					}
+					enablePoisAlongRoute();
+					poiShowUntil = System.currentTimeMillis() + poiSecondsPref.get() * 1000L;
+					lastPoiCalc = 0;
 					if (view != null) {
 						view.refreshMap();
 					}
 				})
 				.setNegativeButton(android.R.string.cancel, null)
 				.show();
+	}
+
+	// asks OsmAnd to look for the selected POI types along the route (within 300 m of it)
+	private void enablePoisAlongRoute() {
+		try {
+			ApplicationMode mode = app.getSettings().getApplicationMode();
+			((net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean>) app.getSettings().SHOW_NEARBY_POI)
+					.setModeValue(mode, true);
+			net.osmand.plus.helpers.WaypointHelper wh = app.getWaypointHelper();
+			wh.setSearchDeviationRadius(net.osmand.plus.helpers.WaypointHelper.POI, 300);
+			wh.recalculatePointsAsync(net.osmand.plus.helpers.WaypointHelper.POI, null);
+		} catch (Throwable e) {
+			Log.w(TAG, "poi along route: " + e);
+		}
+	}
+
+	private void updateNearestPois() {
+		long now = System.currentTimeMillis();
+		if (now - lastPoiCalc < 1500) {
+			return;
+		}
+		lastPoiCalc = now;
+		poiRows = 0;
+		java.util.Arrays.fill(poiNearestDist, Integer.MAX_VALUE);
+		try {
+			net.osmand.plus.helpers.WaypointHelper wh = app.getWaypointHelper();
+			if (!wh.isTypeEnabled(net.osmand.plus.helpers.WaypointHelper.POI)) {
+				enablePoisAlongRoute();
+				return;
+			}
+			List<net.osmand.plus.helpers.LocationPointWrapper> pts = wh.getWaypoints(net.osmand.plus.helpers.WaypointHelper.POI);
+			for (net.osmand.plus.helpers.LocationPointWrapper w : new java.util.ArrayList<>(pts)) {
+				if (!(w.getPoint() instanceof net.osmand.plus.helpers.AmenityLocationPoint) || wh.isPointPassed(w)) {
+					continue;
+				}
+				net.osmand.data.Amenity am = ((net.osmand.plus.helpers.AmenityLocationPoint) w.getPoint()).getAmenity();
+				String sub = am.getSubType();
+				for (int i = 0; i < POI_IDS.length; i++) {
+					if (POI_IDS[i].equals(sub)) {
+						int d = wh.getRouteDistance(w);
+						if (d > 0 && d < poiNearestDist[i]) {
+							poiNearestDist[i] = d;
+						}
+					}
+				}
+			}
+		} catch (Throwable e) {
+			Log.w(TAG, "nearest pois: " + e);
+		}
+		for (int i = 0; i < POI_IDS.length; i++) {
+			if (poiNearestDist[i] != Integer.MAX_VALUE) {
+				poiNearestKey[poiRows] = POI_IDS[i];
+				poiNearestDist[poiRows] = poiNearestDist[i];
+				poiRows++;
+			}
+		}
+	}
+
+	// Sygic-like box: next POI of each chosen category with its distance along the route
+	private void drawPoiOverlay(Canvas c, float x, float top, float maxBottom) {
+		ensurePoiPrefs();
+		boolean any = false;
+		for (String id : POI_IDS) {
+			any |= isPoiSelected(id);
+		}
+		boolean visible = any && (poiAlwaysPref.get() || System.currentTimeMillis() < poiShowUntil);
+		if (!visible) {
+			poiBox.setEmpty();
+			return;
+		}
+		updateNearestPois();
+		float rowH = 44 * dp;
+		int rows = Math.max(1, Math.min(poiRows, (int) ((maxBottom - top - 12 * dp) / rowH)));
+		if (rows <= 0) {
+			return;
+		}
+		float w = 128 * dp;
+		poiBox.set(x, top, x + w, top + rows * rowH + 12 * dp);
+		fill.setStyle(Paint.Style.FILL);
+		fill.setColor(0x55000000);
+		c.drawRoundRect(new RectF(poiBox.left + 2 * dp, poiBox.top + 3 * dp, poiBox.right + 2 * dp, poiBox.bottom + 3 * dp), 12 * dp, 12 * dp, fill);
+		fill.setColor(0xE6121519);
+		c.drawRoundRect(poiBox, 12 * dp, 12 * dp, fill);
+		if (poiRows == 0) {
+			text.setTextAlign(Paint.Align.CENTER);
+			text.setTextSize(12 * dp);
+			text.setColor(0xFFB8C0CA);
+			c.drawText(italian() ? "Cerco POI…" : "Looking for POIs…", poiBox.centerX(), poiBox.top + 6 * dp + rowH / 2f + 4 * dp, text);
+			return;
+		}
+		for (int i = 0; i < rows; i++) {
+			float y = poiBox.top + 6 * dp + i * rowH;
+			int icon = (int) (32 * dp);
+			c.drawBitmap(NavMasterIcons.get(poiNearestKey[i], icon), x + 8 * dp, y + (rowH - icon) / 2f, bmp);
+			net.osmand.plus.utils.FormattedValue fv = OsmAndFormatter.getFormattedDistanceValue(poiNearestDist[i], app);
+			drawValue(c, fv.value, fv.unit, x + 8 * dp + icon + 10 * dp, y + rowH / 2f + 8 * dp, 21 * dp, Color.WHITE, Paint.Align.LEFT);
+		}
 	}
 }
