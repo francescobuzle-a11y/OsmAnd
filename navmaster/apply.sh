@@ -614,6 +614,8 @@ patch(st, '\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.CAR, true);\
       '\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.CAR, false);\n\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.TRUCK, false);\n')
 patch(os.path.join(S, 'views', 'MapActions.java'), '\t\tfloat elevationAngle = settings.getLastKnownMapElevation();\n',
       '\t\tfloat elevationAngle = Math.min(settings.getLastKnownMapElevation(), 45f); // NavMaster: always start in 3D\n')
+# 25) NavMaster icon set (POI categories, road reports) used by the driver layer
+shutil.copy(os.path.join(A, 'navmaster', 'NavMasterIcons.java'), os.path.join(S, 'views', 'layers', 'NavMasterIcons.java'))
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
