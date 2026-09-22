@@ -501,10 +501,11 @@ patch(am, '\tprivate static void initModesParams(@NonNull OsmandApplication app)
 shutil.copy(os.path.join(A, 'navmaster', 'NavMasterDriverLayer.java'), os.path.join(S, 'views', 'layers', 'NavMasterDriverLayer.java'))
 patch(os.path.join(S, 'views', 'MapLayers.java'), 'mapView.addLayer(new net.osmand.plus.views.layers.JunctionViewLayer(app), 9.5f);',
       'mapView.addLayer(new net.osmand.plus.views.layers.JunctionViewLayer(app), 9.5f);\n\t\tmapView.addLayer(new net.osmand.plus.views.layers.NavMasterDriverLayer(app), 9.6f);')
-# 21) Reports saved as favourites are announced along the route (truck and derived profiles)
-patch(st, '\tpublic final OsmandPreference<Boolean> SHOW_NEARBY_POI = new BooleanPreference(this, "show_nearby_poi", false).makeProfile().cache();\n',
-      '\tpublic final OsmandPreference<Boolean> SHOW_NEARBY_POI = new BooleanPreference(this, "show_nearby_poi", false).makeProfile().cache();\n\n'
-      '\t{\n\t\t((CommonPreference<Boolean>) SHOW_NEARBY_FAVORITES).setModeDefaultValue(ApplicationMode.TRUCK, true);\n\t}\n')
+# 21) Voice guidance only for the route: no announcements of every nearby fuel station / parking (road profiles)
+patch(st, '\tpublic final OsmandPreference<Boolean> ANNOUNCE_NEARBY_POI = new BooleanPreference(this, "announce_nearby_poi", true).makeProfile().cache();\n',
+      '\tpublic final OsmandPreference<Boolean> ANNOUNCE_NEARBY_POI = new BooleanPreference(this, "announce_nearby_poi", true).makeProfile().cache();\n\n'
+      '\t{\n\t\t((CommonPreference<Boolean>) ANNOUNCE_NEARBY_POI).setModeDefaultValue(ApplicationMode.TRUCK, false);\n'
+      '\t\t((CommonPreference<Boolean>) ANNOUNCE_NEARBY_POI).setModeDefaultValue(ApplicationMode.CAR, false);\n\t}\n')
 # 22) Road profiles: NavMaster data bar (arrive in / distance / arrival) replaces the route info bar
 wa = os.path.join(S, 'settings', 'backend', 'WidgetsAvailabilityHelper.java')
 patch(wa, '\t\t\tregWidgetVisibility(ROUTE_INFO, exceptDefault);\n',
@@ -616,6 +617,14 @@ patch(os.path.join(S, 'views', 'MapActions.java'), '\t\tfloat elevationAngle = s
       '\t\tfloat elevationAngle = Math.min(settings.getLastKnownMapElevation(), 45f); // NavMaster: always start in 3D\n')
 # 25) NavMaster icon set (POI categories, road reports) used by the driver layer
 shutil.copy(os.path.join(A, 'navmaster', 'NavMasterIcons.java'), os.path.join(S, 'views', 'layers', 'NavMasterIcons.java'))
+# 26) Route line gets thinner when zoomed out, so the roads of the route stay readable in the overview
+brl = os.path.join(S, 'views', 'layers', 'base', 'BaseRouteLayer.java')
+patch(brl, '\t\tFloat width = widthKey != null ? getWidthByKey(tileBox, widthKey) : null;\n\t\treturn width != null ? width : attrs.paint.getStrokeWidth();\n',
+      '\t\tFloat width = widthKey != null ? getWidthByKey(tileBox, widthKey) : null;\n'
+      '\t\tfloat w = width != null ? width : attrs.paint.getStrokeWidth();\n'
+      '\t\tint z = tileBox.getZoom();\n'
+      '\t\tfloat f = z >= 16 ? 1f : z >= 14 ? 0.8f : z >= 12 ? 0.55f : 0.4f; // NavMaster\n'
+      '\t\treturn Math.max(3 * view.getDensity(), w * f);\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
