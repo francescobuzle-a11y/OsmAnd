@@ -154,8 +154,8 @@ public class NavMasterIcons {
 		p.setColor(Color.WHITE);
 		c.drawPath(inner, p);
 		float cx = s * 0.5f;
-		float cy = s * 0.6f;
-		float g = s * 0.3f;
+		float cy = s * 0.62f;
+		float g = s * 0.37f;
 		switch (type) {
 			case "accident":
 				car(c, cx - g * 0.18f, cy + g * 0.12f, g * 0.9f, p, Color.BLACK);
