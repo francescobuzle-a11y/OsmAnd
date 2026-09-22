@@ -209,9 +209,11 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			updateRestriction(rh, demo);
 			float bannerTop = mapTop + 6 * dp;
 			if (restrictionText != null) {
-				float bw = Math.min(mapRight - mapLeft - 20 * dp, 330 * dp);
-				float bt = mapBottom - 46 * dp;
-				RectF banner = new RectF(mapLeft + 10 * dp, bt, mapLeft + 10 * dp + bw, bt + 38 * dp);
+				// centred above the bottom bar, clear of the scale ruler and of the round buttons
+				float bw = Math.min(mapRight - mapLeft - 130 * dp, 330 * dp);
+				float bt = mapBottom - 44 * dp;
+				float bl = Math.max(mapLeft + 120 * dp, (mapLeft + mapRight) / 2f - bw / 2f);
+				RectF banner = new RectF(bl, bt, bl + bw, bt + 38 * dp);
 				RectF fb = nmFit(banner, obstacles(), 170 * dp, 34 * dp, 6 * dp);
 				if (fb != null) {
 					banner = fb;
