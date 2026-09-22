@@ -49,6 +49,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	// shared with NavMasterDriverLayer: when the junction panel was last drawn and where it ends
 	public static volatile long nmPanelShownAt;
 	public static volatile float nmPanelBottom;
+	public static volatile RectF nmPanelRect;
 
 	private OsmandApplication app;
 	private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -120,7 +121,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		RectF panel;
 		if (landscape) {
 			// landscape: right half, kept above the bottom info bar and the zoom buttons
-			panel = new RectF(w * 0.50f, top, w - margin, Math.min(h - 150 * dp, top + (w * 0.5f - margin) * 0.66f));
+			panel = new RectF(w * 0.50f, top, w - margin, Math.min(h - 20 * dp, top + (w * 0.5f - margin) * 0.66f));
 		} else {
 			// portrait: below the first row of map buttons and the speed widget
 			top += 64 * dp;
@@ -130,8 +131,14 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		if (now - lastLog < 50) {
 			Log.i("NavMasterJV", "panel=" + panel);
 		}
+		// keep clear of OsmAnd's lanes widget, speed widgets, zoom buttons and of the NavMaster bottom card
+		RectF fitted = NavMasterDriverLayer.nmFitPanel(panel, 200 * dp, 130 * dp, 8 * dp);
+		if (fitted != null) {
+			panel = fitted;
+		}
 		nmPanelShownAt = now;
 		nmPanelBottom = panel.bottom;
+		nmPanelRect = new RectF(panel);
 		drawPanel(canvas, panel, j, night);
 	}
 
