@@ -510,6 +510,110 @@ wa = os.path.join(S, 'settings', 'backend', 'WidgetsAvailabilityHelper.java')
 patch(wa, '\t\t\tregWidgetVisibility(ROUTE_INFO, exceptDefault);\n',
       '\t\t\tregWidgetVisibility(ROUTE_INFO, exceptDefault).removeIf(m -> m == CAR || m == TRUCK\n'
       '\t\t\t\t\t|| m.getParent() == CAR || m.getParent() == TRUCK);\n')
+# 23) Smooth navigation simulation: 4 position updates per second, realistic speed per road type with
+#     gentle acceleration and slowing down before bends; speed factor and "skip ahead" controllable at runtime
+simd = os.path.join(S, 'simulation')
+patch(os.path.join(simd, 'LocationSimulationUtils.java'),
+      '\tprivate static SimulatedLocation middleLocation(', '\tstatic SimulatedLocation middleLocation(')
+patch(os.path.join(simd, 'LocationSimulationUtils.java'),
+      '\tprivate static float getMaxSpeedForRoadType(', '\tstatic float getMaxSpeedForRoadType(')
+patch(os.path.join(simd, 'OsmAndLocationSimulation.java'),
+      'public class OsmAndLocationSimulation {\n',
+      'public class OsmAndLocationSimulation {\n\n'
+      '\t// NavMaster: runtime controls for the route simulation (set from the map)\n'
+      '\tpublic static volatile float nmSpeedFactor = 1f;\n'
+      '\tpublic static volatile float nmSkipMeters = 0f;\n')
+lst = os.path.join(simd, 'LocationSimulationThread.java')
+patch(lst, '\t\t\tlong timeout = (long) (LOCATION_TIMEOUT * 1000);\n\t\t\tfloat intervalTime = LOCATION_TIMEOUT;\n',
+      '\t\t\tlong timeout = (long) ((useLocationTime ? LOCATION_TIMEOUT : NM_STEP) * 1000);\n'
+      '\t\t\tfloat intervalTime = useLocationTime ? LOCATION_TIMEOUT : NM_STEP;\n')
+patch(lst, '''				} else {
+					Pair<SimulatedLocation, Float> pair = LocationSimulationUtils.createSimulatedLocation(
+							current, directions, mode, meters, intervalTime, coeff, speed, realistic);
+					current = pair.first;
+					meters = pair.second;
+				}''', '''				} else {
+					// NavMaster smooth simulation
+					float skip = OsmAndLocationSimulation.nmSkipMeters;
+					if (skip > 0) {
+						OsmAndLocationSimulation.nmSkipMeters = 0;
+						current = nmAdvance(current, directions, skip);
+					}
+					float factor = Math.max(0.25f, OsmAndLocationSimulation.nmSpeedFactor);
+					float target = nmTargetSpeed(current, directions);
+					float dv = target - nmSpeed;
+					nmSpeed += Math.max(-3.5f * intervalTime, Math.min(1.8f * intervalTime, dv));
+					if (nmSpeed < 2f) {
+						nmSpeed = 2f;
+					}
+					float step = nmSpeed * intervalTime * factor;
+					current = nmAdvance(current, directions, step);
+					meters = step / factor / coeff;
+				}''')
+patch(lst, '\tprivate void addNoise(@NonNull Location location) {\n', '''	private static final float NM_STEP = 0.25f;
+	private float nmSpeed = 8f;
+
+	private static SimulatedLocation nmAdvance(SimulatedLocation cur, List<SimulatedLocation> directions, float meters) {
+		while (meters > 0 && !directions.isEmpty()) {
+			SimulatedLocation next = directions.get(0);
+			float d = cur.distanceTo(next);
+			if (d <= meters) {
+				meters -= d;
+				cur = new SimulatedLocation(directions.remove(0));
+			} else {
+				cur = LocationSimulationUtils.middleLocation(cur, next, meters);
+				meters = 0;
+			}
+		}
+		return cur;
+	}
+
+	// target speed in m/s: road type and speed limit, capped for heavy vehicles, slower before sharp bends
+	private float nmTargetSpeed(SimulatedLocation cur, List<SimulatedLocation> directions) {
+		if (directions.isEmpty()) {
+			return 3f;
+		}
+		SimulatedLocation next = directions.get(0);
+		float kmh = LocationSimulationUtils.getMaxSpeedForRoadType(next.getHighwayType());
+		float limit = next.getSpeedLimit() * 3.6f;
+		if (limit > 5 && limit < kmh + 30) {
+			kmh = limit;
+		}
+		kmh = Math.min(kmh, 90f);
+		float target = kmh / 3.6f;
+		// look ~120 m ahead for bends
+		float dist = cur.distanceTo(next);
+		float bearing = cur.bearingTo(next);
+		for (int i = 1; i < directions.size() && dist < 120; i++) {
+			SimulatedLocation a = directions.get(i - 1);
+			SimulatedLocation b = directions.get(i);
+			float nb = a.bearingTo(b);
+			float turn = Math.abs(((nb - bearing) + 540f) % 360f - 180f);
+			if (turn > 35 && a.distanceTo(b) > 3) {
+				float bendSpeed = turn > 100 ? 5.5f : (turn > 60 ? 8f : 12f);
+				// allow braking over the remaining distance
+				float allowed = (float) Math.sqrt(bendSpeed * bendSpeed + 2 * 1.5f * dist);
+				target = Math.min(target, allowed);
+			}
+			bearing = nb;
+			dist += a.distanceTo(b);
+		}
+		return target;
+	}
+
+	private void addNoise(@NonNull Location location) {
+''')
+# 24) Sygic-style navigation screen for road profiles: NavMaster bottom panel shows the next manoeuvre,
+#     so the top turn banner, the street name bar and the bottom-left speedometer are hidden; 3D tilt at start
+patch(wa, '\t\tregWidgetVisibility(NEXT_TURN, nextTurnSet);\n',
+      '\t\tregWidgetVisibility(NEXT_TURN, nextTurnSet).removeIf(m -> m == CAR || m == TRUCK\n'
+      '\t\t\t\t|| m.getParent() == CAR || m.getParent() == TRUCK);\n')
+patch(wa, '\t\tregWidgetVisibility(STREET_NAME, CAR, TRUCK);\n',
+      '\t\tregWidgetVisibility(STREET_NAME, CAR, TRUCK).clear();\n')
+patch(st, '\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.CAR, true);\n\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.TRUCK, true);\n',
+      '\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.CAR, false);\n\t\tSHOW_SPEEDOMETER.setModeDefaultValue(ApplicationMode.TRUCK, false);\n')
+patch(os.path.join(S, 'views', 'MapActions.java'), '\t\tfloat elevationAngle = settings.getLastKnownMapElevation();\n',
+      '\t\tfloat elevationAngle = Math.min(settings.getLastKnownMapElevation(), 45f); // NavMaster: always start in 3D\n')
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
