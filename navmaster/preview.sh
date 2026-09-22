@@ -7,6 +7,9 @@ PKG=net.osmand.dev
 ACT=net.osmand.plus.activities.MapActivity
 INFO="$OUT/preview_info.txt"
 shot() { adb exec-out screencap -p > "$OUT/$1.png"; echo "shot $1" >> "$INFO"; }
+# taps the NavMaster round buttons wherever the layout put them (logged as "NMBTN report x y poi x y")
+btn_xy() { adb logcat -d -s NavMasterDL:I 2>/dev/null | grep NMBTN | tail -1 | awk -v k="$1" '{for (i = 1; i <= NF; i++) if ($i == k) print $(i + 1), $(i + 2)}'; }
+tap_btn() { local xy; xy=$(btn_xy "$1"); if [ -n "$xy" ]; then set -- $xy; echo "tap_btn $1 $2" >> "$INFO"; tap "$1" "$2"; else echo "tap_btn $1 NOT FOUND" >> "$INFO"; fi; }
 view() { adb shell am start -a android.intent.action.VIEW -d "\"$1\"" $PKG; }
 dump_ui() { rm -f ui.xml; adb shell rm -f /sdcard/ui.xml; timeout 20 adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml > ui.xml 2>/dev/null; grep -q "<node" ui.xml || rm -f ui.xml; }
 # tap_text "label" X Y  -> taps the element with that label, or X,Y if the UI tree is not readable
@@ -121,7 +124,7 @@ sleep 10
 tap_text "mantieni attivo|keep active"; sleep 2
 for i in 1 2 3; do adb emu geo fix 12.4785 43.9665; sleep 3; done
 sleep 8; shot 12_arrivo_satellite
-tap 107 1077; sleep 3; shot 14_segnala; texts segnala   # "Segnala" button -> report types
+tap_btn report; sleep 3; shot 14_segnala; texts segnala   # "Segnala" button -> report types
 adb shell input keyevent 4; sleep 2
 adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4780 43.9660; sleep 10; shot 13_arrivo_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
@@ -133,10 +136,10 @@ sleep 10
 tap_text "mantieni attivo|keep active"; sleep 2
 sleep 8; shot 15_simulazione_1
 sleep 6; shot 16_simulazione_2
-tap 105 1200; sleep 3; shot 18_poi_impostazioni; texts poi   # POI button -> categories, always / on demand
+tap_btn poi; sleep 1; tap_btn poi; sleep 3; shot 18_poi_impostazioni; texts poi   # POI button -> categories, always / on demand
 tap_text "carburante|fuel"; sleep 1; tap_text "parcheggi|parking"; sleep 1; tap_text "aree di servizio|service areas"; sleep 1
 tap_text "ok"; sleep 10; shot 19_poi_sovraimpressione
-tap 105 1014; sleep 3; shot 20_segnala_icone; texts segnala2
+tap_btn report; sleep 3; shot 20_segnala_icone; texts segnala2
 adb shell input keyevent 4; sleep 2
 adb shell settings put system user_rotation 1; sleep 8; shot 17_simulazione_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
