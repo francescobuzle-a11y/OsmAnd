@@ -133,6 +133,11 @@ sleep 10
 tap_text "mantieni attivo|keep active"; sleep 2
 sleep 8; shot 15_simulazione_1
 sleep 6; shot 16_simulazione_2
+tap 105 1200; sleep 3; shot 18_poi_impostazioni; texts poi   # POI button -> categories, always / on demand
+tap_text "carburante|fuel"; sleep 1; tap_text "parcheggi|parking"; sleep 1; tap_text "aree di servizio|service areas"; sleep 1
+tap_text "ok"; sleep 10; shot 19_poi_sovraimpressione
+tap 105 1014; sleep 3; shot 20_segnala_icone; texts segnala2
+adb shell input keyevent 4; sleep 2
 adb shell settings put system user_rotation 1; sleep 8; shot 17_simulazione_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
 
