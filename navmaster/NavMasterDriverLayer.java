@@ -186,7 +186,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				if (tp != null) {
 					RectF panel;
 					if (landscape) {
-						panel = new RectF(w * 0.50f, top, w - 70 * dp, Math.min(h - lastPanelH - 50 * dp, top + (w * 0.5f) * 0.70f));
+						panel = new RectF(w * 0.50f, top, w - 96 * dp, Math.min(h - lastPanelH - 12 * dp, top + (w * 0.5f) * 0.70f));
 					} else {
 						float t = Math.max(bannerTop, top + 64 * dp);
 						panel = new RectF(10 * dp, t, w - 10 * dp, t + Math.min(w * 0.62f, h * 0.34f));
@@ -639,6 +639,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		fill.setShader(null);
 		fill.setColor(0x40000000);
 		c.drawRoundRect(new RectF(r.left, r.top + 4 * dp, r.right, r.bottom + 6 * dp), radius, radius, fill);
+		fill.setColor(0xFFFFFFFF);
 		fill.setShader(new android.graphics.LinearGradient(0, r.top, 0, r.bottom, CARD_TOP, CARD_BOTTOM,
 				android.graphics.Shader.TileMode.CLAMP));
 		c.drawRoundRect(r, radius, radius, fill);
@@ -665,7 +666,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float margin = 10 * dp;
 		float cardH = (landscape ? 92 : 118) * dp;
 		float simH = simOn ? 52 * dp : 0;
-		RectF card = new RectF(margin, h - margin - cardH - simH, w - margin, h - margin);
+		float cardW = landscape ? Math.min(w - 2 * margin, 660 * dp) : w - 2 * margin;
+		RectF card = new RectF(w / 2f - cardW / 2f, h - margin - cardH - simH, w / 2f + cardW / 2f, h - margin);
 		float radius = 22 * dp;
 		card(c, card, radius);
 		float top = card.top + simH;
@@ -678,6 +680,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		stroke.setStrokeWidth(4 * dp);
 		stroke.setColor(0x33FFFFFF);
 		c.drawLine(bx0, barY, bx1, barY, stroke);
+		stroke.setColor(0xFFFFFFFF);
 		stroke.setShader(new android.graphics.LinearGradient(bx0, 0, bx1, 0, ACCENT, ACCENT_2, android.graphics.Shader.TileMode.CLAMP));
 		c.drawLine(bx0, barY, bx1, barY, stroke);
 		stroke.setShader(null);
@@ -729,7 +732,6 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float row2 = contentTop + contentH * 0.78f;
 		// left: arrival time + remaining distance
 		drawValue(c, eta, "", lx, row1 + big * 0.36f, big, Color.WHITE, Paint.Align.LEFT);
-		caption(c, it ? "arrivo" : "arrival", lx, row1 - big * 0.62f, Paint.Align.LEFT);
 		drawValue(c, dist.value, dist.unit, lx, row2 + big * 0.3f, big * 0.8f, 0xFFDDE3EA, Paint.Align.LEFT);
 		// right: speed (pill turns red when above the limit) + time left
 		text.setTextSize(big);
@@ -781,7 +783,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				float x0 = cx - total / 2f;
 				float tileTop = contentTop + (hasStreet ? 2 * dp : (contentH - tile) / 2f);
 				RectF t = new RectF(x0, tileTop, x0 + tile, tileTop + tile);
-				fill.setShader(new android.graphics.LinearGradient(0, t.top, 0, t.bottom, ACCENT, 0xFF1E8E47,
+				fill.setColor(0xFFFFFFFF);
+		fill.setShader(new android.graphics.LinearGradient(0, t.top, 0, t.bottom, ACCENT, 0xFF1E8E47,
 						android.graphics.Shader.TileMode.CLAMP));
 				c.drawRoundRect(t, 14 * dp, 14 * dp, fill);
 				fill.setShader(null);
@@ -987,6 +990,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float d = 54 * dp;
 		float x = 12 * dp;
 		float y = landscape ? h * 0.36f : Math.max(h * 0.44f, panelBottom + 14 * dp);
+		// never under the bottom card
+		y = Math.min(y, h - lastPanelH - 2 * d - 24 * dp);
 		reportBtn.set(x, y, x + d, y + d);
 		poiBtn.set(x, y + d + 12 * dp, x + d, y + 2 * d + 12 * dp);
 		buttonsVisible = true;
@@ -1001,6 +1006,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		fill.setShader(null);
 		fill.setColor(0x40000000);
 		c.drawCircle(r.centerX(), r.centerY() + 3 * dp, rad, fill);
+		fill.setColor(0xFFFFFFFF);
 		fill.setShader(new android.graphics.LinearGradient(0, r.top, 0, r.bottom, CARD_TOP, CARD_BOTTOM,
 				android.graphics.Shader.TileMode.CLAMP));
 		c.drawCircle(r.centerX(), r.centerY(), rad, fill);
