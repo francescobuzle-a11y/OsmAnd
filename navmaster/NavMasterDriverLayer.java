@@ -312,36 +312,29 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	}
 
 	private void drawBanner(Canvas c, RectF r) {
-		fill.setStyle(Paint.Style.FILL);
-		fill.setColor(0x55000000);
-		c.drawRoundRect(new RectF(r.left + 2 * dp, r.top + 3 * dp, r.right + 2 * dp, r.bottom + 3 * dp), 8 * dp, 8 * dp, fill);
-		fill.setColor(BANNER_RED);
-		c.drawRoundRect(r, 8 * dp, 8 * dp, fill);
-		// warning triangle
-		float s = r.height() * 0.62f;
-		float cx = r.left + 10 * dp + s / 2f;
-		float cy = r.centerY();
-		path.reset();
-		path.moveTo(cx, cy - s / 2f);
-		path.lineTo(cx + s / 2f, cy + s / 2f);
-		path.lineTo(cx - s / 2f, cy + s / 2f);
-		path.close();
-		fill.setColor(Color.WHITE);
-		c.drawPath(path, fill);
-		text.setColor(BANNER_RED);
-		text.setTextAlign(Paint.Align.CENTER);
-		text.setTextSize(s * 0.62f);
-		c.drawText("!", cx, cy + s * 0.40f, text);
-		text.setColor(Color.WHITE);
+		card(c, r, r.height() / 2f);
+		float s = r.height() - 10 * dp;
+		int icon = (int) s;
+		c.drawBitmap(NavMasterIcons.get("rep_limit", icon), r.left + 5 * dp, r.top + 5 * dp, bmp);
+		String[] parts = restrictionText.split("  ·  ");
+		float tx = r.left + 5 * dp + icon + 10 * dp;
+		float ts = 15 * dp;
 		text.setTextAlign(Paint.Align.LEFT);
-		float ts = 16 * dp;
 		text.setTextSize(ts);
-		float avail = r.right - (cx + s / 2f + 10 * dp) - 8 * dp;
-		while (text.measureText(restrictionText) > avail && ts > 10 * dp) {
+		String main = parts[0];
+		String dist = parts.length > 1 ? parts[1] : "";
+		Paint dp2 = new Paint(text);
+		dp2.setTextSize(13 * dp);
+		float avail = r.right - tx - 14 * dp - dp2.measureText(dist) - 8 * dp;
+		while (text.measureText(main) > avail && ts > 10 * dp) {
 			ts -= dp;
 			text.setTextSize(ts);
 		}
-		c.drawText(restrictionText, cx + s / 2f + 10 * dp, cy + ts * 0.36f, text);
+		text.setColor(Color.WHITE);
+		c.drawText(main, tx, r.centerY() + ts * 0.36f, text);
+		dp2.setTextAlign(Paint.Align.RIGHT);
+		dp2.setColor(0xFFFF8A80);
+		c.drawText(dist, r.right - 14 * dp, r.centerY() + 13 * dp * 0.36f, dp2);
 	}
 
 	// ---------------------------------------------------------------- arrival satellite panel
@@ -634,46 +627,92 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		}
 	}
 
+	// ---- NavMaster "glass" style helpers
+	private static final int CARD_TOP = 0xF2232830;
+	private static final int CARD_BOTTOM = 0xF2121519;
+	private static final int ACCENT = 0xFF2EB85C;
+	private static final int ACCENT_2 = 0xFF1FA2A6;
+	private static final int MUTED = 0xFF9AA4B0;
+
+	private void card(Canvas c, RectF r, float radius) {
+		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(null);
+		fill.setColor(0x40000000);
+		c.drawRoundRect(new RectF(r.left, r.top + 4 * dp, r.right, r.bottom + 6 * dp), radius, radius, fill);
+		fill.setShader(new android.graphics.LinearGradient(0, r.top, 0, r.bottom, CARD_TOP, CARD_BOTTOM,
+				android.graphics.Shader.TileMode.CLAMP));
+		c.drawRoundRect(r, radius, radius, fill);
+		fill.setShader(null);
+		stroke.setShader(null);
+		stroke.setColor(0x22FFFFFF);
+		stroke.setStrokeWidth(1f * dp);
+		c.drawRoundRect(new RectF(r.left + 0.5f * dp, r.top + 0.5f * dp, r.right - 0.5f * dp, r.bottom - 0.5f * dp), radius, radius, stroke);
+	}
+
+	private void caption(Canvas c, String t, float x, float y, Paint.Align align) {
+		text.setTextSize(10.5f * dp);
+		text.setTextAlign(align);
+		text.setColor(MUTED);
+		text.setLetterSpacing(0.08f);
+		c.drawText(t.toUpperCase(Locale.getDefault()), x, y, text);
+		text.setLetterSpacing(0f);
+	}
+
 	private float drawSygicPanel(Canvas c, int w, int h, boolean landscape, RoutingHelper rh, boolean night) {
 		boolean it = italian();
-		float panelH = (landscape ? 84 : 112) * dp;
-		RectF panel = new RectF(0, h - panelH, w, h);
-		fill.setStyle(Paint.Style.FILL);
-		fill.setColor(0xF0121519);
-		c.drawRect(panel, fill);
+		net.osmand.plus.simulation.OsmAndLocationSimulation sim = app.getLocationProvider().getLocationSimulation();
+		boolean simOn = sim != null && sim.isRouteAnimating();
+		float margin = 10 * dp;
+		float cardH = (landscape ? 92 : 118) * dp;
+		float simH = simOn ? 52 * dp : 0;
+		RectF card = new RectF(margin, h - margin - cardH - simH, w - margin, h - margin);
+		float radius = 22 * dp;
+		card(c, card, radius);
+		float top = card.top + simH;
 
-		// route progress strip: whole remaining route, ticks for the next turns, red tick for the next limit
-		float stripH = 6 * dp;
-		RectF strip = new RectF(0, panel.top, w, panel.top + stripH);
-		fill.setColor(0xFF2E343C);
-		c.drawRect(strip, fill);
+		// route progress: thin rounded bar with turn dots and the next limit
+		float barY = top + 10 * dp;
+		float bx0 = card.left + 18 * dp;
+		float bx1 = card.right - 18 * dp;
+		stroke.setStrokeCap(Paint.Cap.ROUND);
+		stroke.setStrokeWidth(4 * dp);
+		stroke.setColor(0x33FFFFFF);
+		c.drawLine(bx0, barY, bx1, barY, stroke);
+		stroke.setShader(new android.graphics.LinearGradient(bx0, 0, bx1, 0, ACCENT, ACCENT_2, android.graphics.Shader.TileMode.CLAMP));
+		c.drawLine(bx0, barY, bx1, barY, stroke);
+		stroke.setShader(null);
 		int left = rh.getLeftDistance();
 		RouteCalculationResult route = rh.getRoute();
-		fill.setColor(0xFF8E44AD);
-		c.drawRect(strip.left, strip.top + stripH * 0.3f, strip.right, strip.bottom - stripH * 0.3f, fill);
 		if (route != null && left > 0) {
 			List<net.osmand.plus.routing.RouteDirectionInfo> dirs = rh.getRouteDirections();
 			if (dirs != null) {
-				fill.setColor(0xFFFFD23F);
+				fill.setColor(Color.WHITE);
 				for (net.osmand.plus.routing.RouteDirectionInfo di : dirs) {
 					int toEnd = route.getDistanceFromPoint(di.routePointOffset);
 					if (toEnd <= 0 || toEnd >= left) {
 						continue;
 					}
-					float x = strip.left + (1f - toEnd / (float) left) * strip.width();
-					c.drawRect(x - 5 * dp, strip.top, x + 5 * dp, strip.bottom, fill);
+					float x = bx0 + (1f - toEnd / (float) left) * (bx1 - bx0);
+					c.drawCircle(x, barY, 2.6f * dp, fill);
 				}
 			}
 			if (restrictionText != null && restrictionDist < left) {
-				float x = strip.left + restrictionDist / (float) left * strip.width();
+				float x = bx0 + restrictionDist / (float) left * (bx1 - bx0);
+				fill.setColor(Color.WHITE);
+				c.drawCircle(x, barY, 5.5f * dp, fill);
 				fill.setColor(BANNER_RED);
-				c.drawRect(x - 4 * dp, strip.top - 2 * dp, x + 4 * dp, strip.bottom + 2 * dp, fill);
+				c.drawCircle(x, barY, 4f * dp, fill);
 			}
 		}
+		// vehicle marker at the start of the bar
+		fill.setColor(Color.WHITE);
+		c.drawCircle(bx0, barY, 5 * dp, fill);
+		fill.setColor(ACCENT);
+		c.drawCircle(bx0, barY, 3.2f * dp, fill);
 
-		float colW = landscape ? Math.min(w * 0.22f, 190 * dp) : w * 0.27f;
-		float top = strip.bottom;
-		float rowH = (panel.bottom - top) / 2f;
+		float contentTop = barY + 8 * dp;
+		float contentH = card.bottom - contentTop - 6 * dp;
+		float colW = landscape ? Math.min(w * 0.2f, 180 * dp) : (card.width()) * 0.25f;
 		int leftS = rh.getLeftTime();
 		String eta = new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date(System.currentTimeMillis() + leftS * 1000L));
 		net.osmand.plus.utils.FormattedValue dist = OsmAndFormatter.getFormattedDistanceValue(left, app);
@@ -683,26 +722,46 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		float limit = rh.getCurrentMaxSpeed();
 		boolean speeding = limit > 0 && mps > limit + 1.5f;
 		String[] tl = timeLeft(leftS);
-		float big = (landscape ? 26 : 25) * dp;
-		float pad = 12 * dp;
-		drawValue(c, eta, "", pad, top + rowH * 0.5f + big * 0.36f, big, Color.WHITE, Paint.Align.LEFT);
-		drawValue(c, dist.value, dist.unit, pad, top + rowH * 1.5f + big * 0.36f, big * 0.86f, Color.WHITE, Paint.Align.LEFT);
-		drawValue(c, sp.value, sp.unit, w - pad, top + rowH * 0.5f + big * 0.36f, big, speeding ? 0xFFFF5252 : Color.WHITE, Paint.Align.RIGHT);
-		drawValue(c, tl[0], tl[1], w - pad, top + rowH * 1.5f + big * 0.36f, big * 0.86f, Color.WHITE, Paint.Align.RIGHT);
-		stroke.setColor(0xFF333A43);
-		stroke.setStrokeWidth(1.2f * dp);
-		c.drawLine(colW, top + 8 * dp, colW, panel.bottom - 8 * dp, stroke);
-		c.drawLine(w - colW, top + 8 * dp, w - colW, panel.bottom - 8 * dp, stroke);
+		float big = (landscape ? 25 : 24) * dp;
+		float lx = card.left + 16 * dp;
+		float rx = card.right - 16 * dp;
+		float row1 = contentTop + contentH * 0.30f;
+		float row2 = contentTop + contentH * 0.78f;
+		// left: arrival time + remaining distance
+		drawValue(c, eta, "", lx, row1 + big * 0.36f, big, Color.WHITE, Paint.Align.LEFT);
+		caption(c, it ? "arrivo" : "arrival", lx, row1 - big * 0.62f, Paint.Align.LEFT);
+		drawValue(c, dist.value, dist.unit, lx, row2 + big * 0.3f, big * 0.8f, 0xFFDDE3EA, Paint.Align.LEFT);
+		// right: speed (pill turns red when above the limit) + time left
+		text.setTextSize(big);
+		Paint up = new Paint(text);
+		up.setTextSize(big * 0.45f);
+		float spW = text.measureText(sp.value) + up.measureText(sp.unit) + 2 * dp;
+		RectF pill = new RectF(rx - spW - 14 * dp, row1 - big * 0.62f, rx + 6 * dp, row1 + big * 0.62f);
+		if (speeding) {
+			fill.setColor(0xFFE53935);
+			c.drawRoundRect(pill, pill.height() / 2f, pill.height() / 2f, fill);
+		}
+		drawValue(c, sp.value, sp.unit, rx - 4 * dp, row1 + big * 0.36f, big, Color.WHITE, Paint.Align.RIGHT);
+		drawValue(c, tl[0], tl[1], rx, row2 + big * 0.3f, big * 0.8f, 0xFFDDE3EA, Paint.Align.RIGHT);
 
-		// centre: next manoeuvre arrow + distance
+		// centre: manoeuvre tile + distance + street
+		float cx = card.centerX();
 		net.osmand.plus.routing.NextDirectionInfo next = rh.getNextRouteDirectionInfo(new net.osmand.plus.routing.NextDirectionInfo(), true);
-		float cx = w / 2f;
-		float cTop = top;
-		float cH = panel.bottom - top;
+		String street = null;
+		try {
+			net.osmand.plus.routing.CurrentStreetName sn = rh.getCurrentName(
+					next != null ? next : new net.osmand.plus.routing.NextDirectionInfo(), false);
+			street = sn != null ? sn.text : null;
+		} catch (Throwable e) {
+			// optional
+		}
+		boolean hasStreet = !Algorithms.isEmpty(street);
+		float centreW = card.width() - 2 * colW;
 		if (next != null && next.directionInfo != null && next.directionInfo.getTurnType() != null) {
-			int size = (int) Math.min(cH * 0.78f, 70 * dp);
+			float tile = Math.min(contentH * (hasStreet ? 0.66f : 0.8f), 60 * dp);
 			MapActivity a = getMapActivity();
 			if (a != null) {
+				int size = (int) (tile * 0.86f);
 				if (turnDrawable == null || turnDrawableSize != size) {
 					turnDrawable = new net.osmand.plus.views.mapwidgets.TurnDrawable(a, false);
 					turnDrawable.setBounds(0, 0, size, size);
@@ -712,102 +771,99 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				}
 				turnDrawable.setTurnType(next.directionInfo.getTurnType());
 				net.osmand.plus.utils.FormattedValue nd = OsmAndFormatter.getFormattedDistanceValue(next.distanceTo, app);
-				float valueSize = (landscape ? 40 : 38) * dp;
+				float valueSize = (landscape ? 38 : 34) * dp;
 				text.setTextSize(valueSize);
 				float vw = text.measureText(nd.value);
-				float total = size + 8 * dp + vw;
+				Paint u2 = new Paint(text);
+				u2.setTextSize(valueSize * 0.42f);
+				float uw = u2.measureText(nd.unit) + 3 * dp;
+				float total = tile + 12 * dp + vw + uw;
 				float x0 = cx - total / 2f;
+				float tileTop = contentTop + (hasStreet ? 2 * dp : (contentH - tile) / 2f);
+				RectF t = new RectF(x0, tileTop, x0 + tile, tileTop + tile);
+				fill.setShader(new android.graphics.LinearGradient(0, t.top, 0, t.bottom, ACCENT, 0xFF1E8E47,
+						android.graphics.Shader.TileMode.CLAMP));
+				c.drawRoundRect(t, 14 * dp, 14 * dp, fill);
+				fill.setShader(null);
 				c.save();
-				c.translate(x0, cTop + (cH - size) / 2f);
+				c.translate(t.centerX() - size / 2f, t.centerY() - size / 2f);
 				turnDrawable.draw(c);
 				c.restore();
-				drawValue(c, nd.value, "", x0 + size + 8 * dp, cTop + cH * 0.52f + valueSize * 0.30f, valueSize, Color.WHITE, Paint.Align.LEFT);
-				text.setTextSize(12 * dp);
-				text.setTextAlign(Paint.Align.CENTER);
-				text.setColor(0xFFB8C0CA);
-				String unitName = "km".equals(nd.unit) ? (it ? "chilometri" : "kilometres")
-						: ("m".equals(nd.unit) ? (it ? "metri" : "metres") : nd.unit);
-				c.drawText(unitName, x0 + size + 8 * dp + vw / 2f, cTop + cH * 0.52f + valueSize * 0.30f + 16 * dp, text);
+				drawValue(c, nd.value, nd.unit, t.right + 12 * dp, t.centerY() + valueSize * 0.35f, valueSize, Color.WHITE, Paint.Align.LEFT);
 			}
 		}
-
-		// current street label above the panel
-		try {
-			net.osmand.plus.routing.CurrentStreetName sn = rh.getCurrentName(
-					next != null ? next : new net.osmand.plus.routing.NextDirectionInfo(), false);
-			String street = sn != null ? sn.text : null;
-			if (!Algorithms.isEmpty(street)) {
-				text.setTextSize(15 * dp);
-				text.setTextAlign(Paint.Align.CENTER);
-				float tw = Math.min(text.measureText(street), w - 140 * dp);
-				RectF lbl = new RectF(cx - tw / 2f - 10 * dp, panel.top - 34 * dp, cx + tw / 2f + 10 * dp, panel.top - 6 * dp);
-				fill.setColor(0xE6121519);
-				c.drawRoundRect(lbl, 6 * dp, 6 * dp, fill);
-				text.setColor(Color.WHITE);
-				c.save();
-				c.clipRect(lbl);
-				c.drawText(street, cx, lbl.bottom - 9 * dp, text);
-				c.restore();
+		if (hasStreet) {
+			text.setTextSize(14 * dp);
+			text.setTextAlign(Paint.Align.CENTER);
+			text.setColor(0xFFDDE3EA);
+			String st = street;
+			float maxW = centreW - 12 * dp;
+			if (text.measureText(st) > maxW) {
+				while (st.length() > 3 && text.measureText(st + "…") > maxW) {
+					st = st.substring(0, st.length() - 1);
+				}
+				st = st + "…";
 			}
-		} catch (Throwable e) {
-			// street name is optional
+			c.drawText(st, cx, card.bottom - 12 * dp, text);
 		}
+		// thin separators
+		stroke.setColor(0x1FFFFFFF);
+		stroke.setStrokeWidth(1f * dp);
+		stroke.setStrokeCap(Paint.Cap.BUTT);
+		c.drawLine(card.left + colW, contentTop + 6 * dp, card.left + colW, card.bottom - 12 * dp, stroke);
+		c.drawLine(card.right - colW, contentTop + 6 * dp, card.right - colW, card.bottom - 12 * dp, stroke);
 
-		drawSimControls(c, w, panel.top - 44 * dp);
-		return panelH;
+		if (simOn) {
+			drawSimControls(c, new RectF(card.left, card.top, card.right, card.top + simH));
+		} else {
+			simVisible = false;
+		}
+		return h - card.top + 6 * dp;
 	}
 
-	// simulation controls: slower / speed / faster / skip 1 km / stop
-	private void drawSimControls(Canvas c, int w, float bottom) {
-		simVisible = false;
-		net.osmand.plus.simulation.OsmAndLocationSimulation sim = app.getLocationProvider().getLocationSimulation();
-		if (sim == null || !sim.isRouteAnimating()) {
-			return;
-		}
+	// simulation controls row inside the card: slower / speed / faster / skip 1 km / stop
+	private void drawSimControls(Canvas c, RectF row) {
 		simVisible = true;
-		float d = 46 * dp;
-		float gap = 8 * dp;
-		float total = 4 * d + 3 * gap + 70 * dp;
-		float x = 14 * dp;
-		if (x + total > w - 130 * dp) {
-			// portrait: keep clear of the zoom / 3D buttons on the right
-			bottom -= 124 * dp;
-		}
-		float top = bottom - d;
 		boolean it = italian();
-		simSlower.set(x, top, x + d, bottom);
+		float d = 38 * dp;
+		float gap = 10 * dp;
+		float labelW = 64 * dp;
+		float total = 4 * d + 4 * gap + labelW;
+		float x = row.centerX() - total / 2f;
+		float cy = row.centerY() + 3 * dp;
+		simSlower.set(x, cy - d / 2f, x + d, cy + d / 2f);
 		x += d + gap;
-		RectF label = new RectF(x, top, x + 70 * dp, bottom);
-		x += 70 * dp + gap;
-		simFaster.set(x, top, x + d, bottom);
+		RectF label = new RectF(x, cy - d / 2f, x + labelW, cy + d / 2f);
+		x += labelW + gap;
+		simFaster.set(x, cy - d / 2f, x + d, cy + d / 2f);
 		x += d + gap;
-		simSkip.set(x, top, x + d, bottom);
+		simSkip.set(x, cy - d / 2f, x + d, cy + d / 2f);
 		x += d + gap;
-		simStop.set(x, top, x + d, bottom);
-		fill.setColor(0xE6121519);
-		c.drawRoundRect(new RectF(simSlower.left - 6 * dp, top - 6 * dp, simStop.right + 6 * dp, bottom + 6 * dp), 12 * dp, 12 * dp, fill);
-		simButton(c, simSlower, "−");
-		simButton(c, simFaster, "+");
-		simButton(c, simSkip, "»");
-		simButton(c, simStop, "■");
+		simStop.set(x, cy - d / 2f, x + d, cy + d / 2f);
+		simButton(c, simSlower, "−", 0x33FFFFFF);
+		simButton(c, simFaster, "+", 0x33FFFFFF);
+		simButton(c, simSkip, "»", 0x33FFFFFF);
+		simButton(c, simStop, "■", 0xCCE53935);
 		text.setTextAlign(Paint.Align.CENTER);
 		text.setColor(Color.WHITE);
 		text.setTextSize(17 * dp);
 		float f = net.osmand.plus.simulation.OsmAndLocationSimulation.nmSpeedFactor;
 		String fs = f == Math.round(f) ? String.valueOf(Math.round(f)) : String.valueOf(f);
-		c.drawText("×" + fs, label.centerX(), label.centerY() + 2 * dp, text);
-		text.setTextSize(9 * dp);
-		text.setColor(0xFFB8C0CA);
-		c.drawText(it ? "simulazione" : "simulation", label.centerX(), label.bottom - 5 * dp, text);
+		c.drawText("×" + fs, label.centerX(), label.centerY() + 1 * dp, text);
+		caption(c, it ? "simulazione" : "simulation", label.centerX(), label.bottom - 1 * dp, Paint.Align.CENTER);
+		stroke.setColor(0x1FFFFFFF);
+		stroke.setStrokeWidth(1f * dp);
+		c.drawLine(row.left + 18 * dp, row.bottom, row.right - 18 * dp, row.bottom, stroke);
 	}
 
-	private void simButton(Canvas c, RectF r, String s) {
-		fill.setColor(0xFF2E343C);
-		c.drawRoundRect(r, 10 * dp, 10 * dp, fill);
+	private void simButton(Canvas c, RectF r, String s, int bg) {
+		fill.setStyle(Paint.Style.FILL);
+		fill.setColor(bg);
+		c.drawCircle(r.centerX(), r.centerY(), r.width() / 2f, fill);
 		text.setTextAlign(Paint.Align.CENTER);
 		text.setColor(Color.WHITE);
-		text.setTextSize(24 * dp);
-		c.drawText(s, r.centerX(), r.centerY() + 8 * dp, text);
+		text.setTextSize(20 * dp);
+		c.drawText(s, r.centerX(), r.centerY() + 7 * dp, text);
 	}
 
 	private boolean onSimTap(PointF p) {
@@ -940,19 +996,25 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	}
 
 	private void drawRoundButton(Canvas c, RectF r, int color, String symbol, String label) {
+		float rad = r.width() / 2f;
 		fill.setStyle(Paint.Style.FILL);
-		fill.setColor(0x55000000);
-		c.drawCircle(r.centerX() + 1.5f * dp, r.centerY() + 2.5f * dp, r.width() / 2f, fill);
-		fill.setColor(Color.WHITE);
-		c.drawCircle(r.centerX(), r.centerY(), r.width() / 2f, fill);
-		fill.setColor(color);
-		c.drawCircle(r.centerX(), r.centerY(), r.width() / 2f - 3 * dp, fill);
+		fill.setShader(null);
+		fill.setColor(0x40000000);
+		c.drawCircle(r.centerX(), r.centerY() + 3 * dp, rad, fill);
+		fill.setShader(new android.graphics.LinearGradient(0, r.top, 0, r.bottom, CARD_TOP, CARD_BOTTOM,
+				android.graphics.Shader.TileMode.CLAMP));
+		c.drawCircle(r.centerX(), r.centerY(), rad, fill);
+		fill.setShader(null);
+		stroke.setColor(color);
+		stroke.setStrokeWidth(2.5f * dp);
+		c.drawCircle(r.centerX(), r.centerY(), rad - 1.5f * dp, stroke);
+		String key = "!".equals(symbol) ? "rep_warn" : "parking";
+		int icon = (int) (rad * 0.95f);
+		c.drawBitmap(NavMasterIcons.get(key, icon), r.centerX() - icon / 2f, r.centerY() - icon * 0.72f, bmp);
 		text.setTextAlign(Paint.Align.CENTER);
 		text.setColor(Color.WHITE);
-		text.setTextSize(22 * dp);
-		c.drawText(symbol, r.centerX(), r.centerY() + 4 * dp, text);
 		text.setTextSize(9.5f * dp);
-		c.drawText(label, r.centerX(), r.centerY() + 17 * dp, text);
+		c.drawText(label, r.centerX(), r.bottom - 8 * dp, text);
 	}
 
 	@Override
@@ -1303,11 +1365,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		}
 		float w = 128 * dp;
 		poiBox.set(x, top, x + w, top + rows * rowH + 12 * dp);
-		fill.setStyle(Paint.Style.FILL);
-		fill.setColor(0x55000000);
-		c.drawRoundRect(new RectF(poiBox.left + 2 * dp, poiBox.top + 3 * dp, poiBox.right + 2 * dp, poiBox.bottom + 3 * dp), 12 * dp, 12 * dp, fill);
-		fill.setColor(0xE6121519);
-		c.drawRoundRect(poiBox, 12 * dp, 12 * dp, fill);
+		card(c, poiBox, 18 * dp);
 		if (poiRows == 0) {
 			text.setTextAlign(Paint.Align.CENTER);
 			text.setTextSize(12 * dp);
