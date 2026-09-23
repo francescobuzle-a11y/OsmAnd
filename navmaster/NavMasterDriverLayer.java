@@ -210,7 +210,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			float bannerTop = mapTop + 6 * dp;
 			if (restrictionText != null) {
 				// under the top bar, to the right of OsmAnd's profile / search buttons
-				float bl = mapLeft + 76 * dp;
+				float bl = mapLeft + (landscape ? 76 : 140) * dp;
 				float br = mapRight - (landscape ? 10 * dp : 96 * dp);
 				RectF banner = new RectF(bl, bannerTop, Math.min(br, bl + 330 * dp), bannerTop + 38 * dp);
 				RectF fb = nmFit(banner, obstacles(), 170 * dp, 34 * dp, 6 * dp);
