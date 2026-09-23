@@ -595,6 +595,12 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			ts -= dp;
 			text.setTextSize(ts);
 		}
+		if (text.measureText(main) > avail) {
+			while (main.length() > 2 && text.measureText(main + "\u2026") > avail) {
+				main = main.substring(0, main.length() - 1);
+			}
+			main = main + "\u2026";
+		}
 		text.setColor(Color.WHITE);
 		c.drawText(main, tx, r.centerY() + ts * 0.36f, text);
 		dp2.setTextAlign(Paint.Align.RIGHT);
