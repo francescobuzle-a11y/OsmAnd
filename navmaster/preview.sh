@@ -116,6 +116,11 @@ for i in 1 2 3; do adb emu geo fix 12.47$((4-i)) 43.96$((2-i)); sleep 2; done   
 sleep 2; shot 10_svincolo_demo
 adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4700 43.9600; sleep 6; shot 11_svincolo_demo_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
+# 5b bis) bird's eye view of the interchange (satellite, turned in the direction of travel)
+view "osmand.api://navigate?start_lat=$START_LAT&start_lon=$START_LON&dest_lat=$DEST_LAT&dest_lon=$DEST_LON&dest_name=NAVMASTER_BIRD&profile=truck&force=true"
+sleep 12; tap_text "mantieni attivo|keep active"; sleep 2
+for i in 1 2 3; do adb emu geo fix 12.47$((4-i)) 43.96$((2-i)); sleep 3; done
+sleep 6; shot 23_svincolo_dall_alto
 adb shell rm -f /sdcard/Android/data/$PKG/files/navmaster_junction_demo
 adb shell setprop debug.navmaster.jv 0
 
