@@ -38,7 +38,9 @@ import java.util.List;
  */
 public class JunctionViewLayer extends OsmandMapLayer {
 
-	private static final int SHOW_DISTANCE_M = 1200;
+	private static final int SHOW_DISTANCE_M = 1600;
+	/** above this distance the interchange is shown from above (bird's eye), like on a Garmin */
+	private static final int BIRDSEYE_FROM_M = 700;
 	private static final int LANES_DISTANCE_M = 800;
 	private static final int LANE_GREEN = 0xFF2BD46A;
 	private static final int LANE_GREEN_DARK = 0xFF0B7A3B;
@@ -71,6 +73,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	private long lastLog;
 	private boolean demo;
 	private boolean demoLanes;
+	private boolean demoBird;
 
 	public JunctionViewLayer(@NonNull Context ctx) {
 		super(ctx);
@@ -96,6 +99,10 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		int turn;
 		boolean compact;
 		int showFrom = 800;
+		double manLat;
+		double manLon;
+		float manBearing;
+		java.util.List<net.osmand.Location> geom;
 		String exitRef;
 		List<String> destinations = new ArrayList<>();
 		boolean motorway = true;
@@ -158,6 +165,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		nmPanelRect = new RectF(panel);
 		if (j.compact) {
 			drawLaneStrip(canvas, panel, j, night);
+		} else if (j.distance > BIRDSEYE_FROM_M && drawBirdsEye(canvas, panel, j)) {
+			// the interchange seen from above while it is still far: the driver sees which
+			// ramp leaves the main road before the schematic view takes over
 		} else {
 			drawPanel(canvas, panel, j, night);
 		}
@@ -187,7 +197,8 @@ public class JunctionViewLayer extends OsmandMapLayer {
 			net.osmand.plus.helpers.TargetPoint tp = app.getTargetPointsHelper().getPointToNavigate();
 			String name = tp != null && tp.getOnlyName() != null ? tp.getOnlyName() : "";
 			demoLanes = name.contains("NAVMASTER_LANES");
-			if (name.contains("NAVMASTER_DEMO") || demoLanes) {
+			demoBird = name.contains("NAVMASTER_BIRD");
+			if (name.contains("NAVMASTER_DEMO") || demoLanes || demoBird) {
 				demo = true;
 			}
 		}
@@ -214,14 +225,45 @@ public class JunctionViewLayer extends OsmandMapLayer {
 			return lj;
 		}
 		Junction j = new Junction();
-		j.distance = 450;
+		j.distance = demoBird ? 900 : 450;
 		j.turn = TurnType.KR;
 		j.exitRef = "12";
 		j.lanes = new int[] {TurnType.C << 1, TurnType.C << 1, (TurnType.C << 1) | 1, (TurnType.TSLR << 1) | 1};
 		j.destinations.add("A14 Bologna");
 		j.destinations.add("Rimini Sud");
 		j.destinations.add("San Marino");
+		try {
+			net.osmand.plus.routing.NextDirectionInfo nd =
+					app.getRoutingHelper().getNextRouteDirectionInfo(new NextDirectionInfo(), false);
+			if (nd != null && nd.directionInfo != null) {
+				fillGeometry(j, nd.directionInfo.routePointOffset);
+			}
+		} catch (Throwable ignored) {
+		}
 		return j;
+	}
+
+	/** where the manoeuvre is, which way we get there and the shape of the route around it */
+	private void fillGeometry(Junction j, int routePointOffset) {
+		try {
+			RoutingHelper rh = app.getRoutingHelper();
+			net.osmand.plus.routing.RouteCalculationResult route = rh != null ? rh.getRoute() : null;
+			java.util.List<net.osmand.Location> locs = route != null ? route.getImmutableAllLocations() : null;
+			if (locs == null || locs.isEmpty()) {
+				return;
+			}
+			int idx = Math.max(0, Math.min(locs.size() - 1, routePointOffset));
+			net.osmand.Location man = locs.get(idx);
+			j.manLat = man.getLatitude();
+			j.manLon = man.getLongitude();
+			net.osmand.Location before = locs.get(Math.max(0, idx - 3));
+			j.manBearing = before.bearingTo(man);
+			int from = Math.max(0, idx - 60);
+			int to = Math.min(locs.size(), idx + 60);
+			j.geom = new ArrayList<>(locs.subList(from, to));
+		} catch (Throwable e) {
+			Log.w("NavMasterJV", "geometry: " + e);
+		}
 	}
 
 	private Junction currentJunction() {
@@ -285,6 +327,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		if (hasExit && !Algorithms.isEmpty(exit.getExitStreetName()) && j.destinations.size() < 3) {
 			j.destinations.add(exit.getExitStreetName());
 		}
+		fillGeometry(j, di.routePointOffset);
 		return j;
 	}
 
@@ -303,6 +346,122 @@ public class JunctionViewLayer extends OsmandMapLayer {
 
 	private static boolean leftSide(int turn) {
 		return turn == TurnType.KL || turn == TurnType.TSLL || turn == TurnType.TL || turn == TurnType.TSHL;
+	}
+
+	/**
+	 * Bird's eye view of the interchange: the real ground seen from above, turned so that the
+	 * direction of travel points up, with the route drawn over it. Returns false when the
+	 * imagery is not ready, so the schematic view is used instead.
+	 */
+	private boolean drawBirdsEye(Canvas c, RectF p, Junction j) {
+		NavMasterDriverLayer dl = NavMasterDriverLayer.nmInstance;
+		if (dl == null || j.geom == null || j.geom.size() < 2 || (j.manLat == 0 && j.manLon == 0)) {
+			return false;
+		}
+		int z = 17;
+		float tile = 256 * dp;
+		float header = 30 * dp;
+		RectF map = new RectF(p.left, p.top + header, p.right, p.bottom);
+		if (map.width() < 100 * dp || map.height() < 60 * dp) {
+			return false;
+		}
+		double cx = NavMasterDriverLayer.nmTileX(j.manLon, z);
+		double cy = NavMasterDriverLayer.nmTileY(j.manLat, z);
+		float rad = (float) Math.hypot(map.width(), map.height()) / 2f + 2 * dp;
+		int minTx = (int) Math.floor(cx - rad / tile);
+		int maxTx = (int) Math.floor(cx + rad / tile);
+		int minTy = (int) Math.floor(cy - rad / tile);
+		int maxTy = (int) Math.floor(cy + rad / tile);
+		int need = 0;
+		int have = 0;
+		for (int tx = minTx; tx <= maxTx; tx++) {
+			for (int ty = minTy; ty <= maxTy; ty++) {
+				need++;
+				if (dl.nmSatTile(z, tx, ty) != null) {
+					have++;
+				}
+			}
+		}
+		if (need == 0 || have < need) {
+			return false;
+		}
+
+		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(null);
+		fill.setColor(0x66000000);
+		c.drawRoundRect(new RectF(p.left + 3 * dp, p.top + 4 * dp, p.right + 3 * dp, p.bottom + 4 * dp), 12 * dp, 12 * dp, fill);
+		fill.setColor(0xFF10161F);
+		c.drawRoundRect(p, 12 * dp, 12 * dp, fill);
+
+		c.save();
+		path.reset();
+		path.addRoundRect(map, new float[] {0, 0, 0, 0, 12 * dp, 12 * dp, 12 * dp, 12 * dp}, Path.Direction.CW);
+		c.clipPath(path);
+		c.rotate(-j.manBearing, map.centerX(), map.centerY());
+		for (int tx = minTx; tx <= maxTx; tx++) {
+			for (int ty = minTy; ty <= maxTy; ty++) {
+				android.graphics.Bitmap b = dl.nmSatTile(z, tx, ty);
+				if (b == null) {
+					continue;
+				}
+				float left = (float) (map.centerX() + (tx - cx) * tile);
+				float top = (float) (map.centerY() + (ty - cy) * tile);
+				c.drawBitmap(b, null, new RectF(left, top, left + tile, top + tile), null);
+			}
+		}
+		// the route over the junction, white outline plus the route colour
+		path.reset();
+		boolean first = true;
+		for (net.osmand.Location l : j.geom) {
+			float x = (float) (map.centerX() + (NavMasterDriverLayer.nmTileX(l.getLongitude(), z) - cx) * tile);
+			float y = (float) (map.centerY() + (NavMasterDriverLayer.nmTileY(l.getLatitude(), z) - cy) * tile);
+			if (first) {
+				path.moveTo(x, y);
+				first = false;
+			} else {
+				path.lineTo(x, y);
+			}
+		}
+		stroke.setStyle(Paint.Style.STROKE);
+		stroke.setPathEffect(null);
+		stroke.setStrokeCap(Paint.Cap.ROUND);
+		stroke.setStrokeJoin(Paint.Join.ROUND);
+		stroke.setColor(0xCCFFFFFF);
+		stroke.setStrokeWidth(11 * dp);
+		c.drawPath(path, stroke);
+		stroke.setColor(LANE_ROUTE);
+		stroke.setStrokeWidth(7 * dp);
+		c.drawPath(path, stroke);
+		// where we are now
+		net.osmand.Location me = app.getLocationProvider().getLastKnownLocation();
+		if (me != null) {
+			float x = (float) (map.centerX() + (NavMasterDriverLayer.nmTileX(me.getLongitude(), z) - cx) * tile);
+			float y = (float) (map.centerY() + (NavMasterDriverLayer.nmTileY(me.getLatitude(), z) - cy) * tile);
+			fill.setColor(0xFFFFFFFF);
+			c.drawCircle(x, y, 7.5f * dp, fill);
+			fill.setColor(0xFF1E88E5);
+			c.drawCircle(x, y, 5 * dp, fill);
+		}
+		c.restore();
+
+		// header: exit and distance, plus the imagery credit
+		text.setTextAlign(Paint.Align.LEFT);
+		text.setColor(0xFFFFFFFF);
+		text.setTextSize(15 * dp);
+		boolean it = "it".equals(java.util.Locale.getDefault().getLanguage());
+		String title = j.exitRef != null
+				? (it ? "Uscita " : "Exit ") + j.exitRef
+				: (it ? "Svincolo" : "Junction");
+		c.drawText(title, p.left + 12 * dp, p.top + 20 * dp, text);
+		text.setTextAlign(Paint.Align.RIGHT);
+		net.osmand.plus.utils.FormattedValue fv = OsmAndFormatter.getFormattedDistanceValue(j.distance, app);
+		c.drawText(fv.value + " " + fv.unit, p.right - 12 * dp, p.top + 20 * dp, text);
+		text.setTextAlign(Paint.Align.RIGHT);
+		text.setTextSize(8 * dp);
+		text.setColor(0x99FFFFFF);
+		c.drawText("Esri", p.right - 6 * dp, p.bottom - 5 * dp, text);
+		text.setTextAlign(Paint.Align.LEFT);
+		return true;
 	}
 
 	private void drawPanel(Canvas canvas, RectF p, Junction j, boolean night) {
