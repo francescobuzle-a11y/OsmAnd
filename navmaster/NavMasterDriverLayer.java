@@ -1185,6 +1185,15 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	/** lanes of the road ahead, as long as the manoeuvre is close enough to matter */
 	private int[] laneAssistLanes(net.osmand.plus.routing.NextDirectionInfo next) {
 		try {
+			net.osmand.plus.helpers.TargetPoint tp = app.getTargetPointsHelper().getPointToNavigate();
+			String dest = tp != null && tp.getOnlyName() != null ? tp.getOnlyName() : "";
+			if (dest.contains("NAVMASTER_LANES") || dest.contains("NAVMASTER_DEMO")) {
+				// preview: same lanes as the demo panel, to check the strip on the emulator
+				return new int[] {net.osmand.router.TurnType.TL << 1,
+						(net.osmand.router.TurnType.C << 1) | 1,
+						(net.osmand.router.TurnType.C << 1) | 1,
+						net.osmand.router.TurnType.TR << 1};
+			}
 			if (next == null || next.directionInfo == null) {
 				return null;
 			}
