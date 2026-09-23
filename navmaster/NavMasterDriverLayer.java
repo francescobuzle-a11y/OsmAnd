@@ -64,6 +64,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private static final int ARRIVAL_SHOW_M = 2000;
 	private static final int RESTRICTION_LOOKAHEAD_M = 5000;
 	private static final int ROUTE_MAGENTA = 0xFFC2189A;
+	/** camera tilt while navigating (90 = flat map seen from above, like OsmAnd's default) */
+	private static final float NM_TILT = 45f;
 	private static final int BANNER_RED = 0xFFC62828;
 	private static final String REPORT_CATEGORY = "NavMaster segnalazioni";
 	// Esri World Imagery (attribution shown on the panel)
@@ -154,6 +156,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			boolean road = nmRoadMode(app.getSettings().getApplicationMode());
 			nmMigrate();
 			nmCursor();
+			nmTilt(navigating);
 			enforceNoPoiVoice();
 			scanHud(w, h);
 			placed.clear();
@@ -386,6 +389,39 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 
 	private boolean migrated;
 	private boolean cursorSet;
+	private boolean wasNavigating;
+	private boolean tiltDone;
+	private long lastTilt;
+
+	/** Garmin-like camera: while following a route the map is tilted, whatever started the navigation. */
+	private void nmTilt(boolean navigating) {
+		if (navigating != wasNavigating) {
+			wasNavigating = navigating;
+			tiltDone = false;
+		}
+		if (!navigating || tiltDone || view == null) {
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (now - lastTilt < 700) {
+			return;
+		}
+		lastTilt = now;
+		try {
+			float target = Math.min(app.getSettings().getLastKnownMapElevation(), NM_TILT);
+			float cur = view.getElevationAngle();
+			if (cur > target + 2f) {
+				app.getSettings().setLastKnownMapElevation(target);
+				view.getAnimatedDraggingThread().startTilting(target, 0);
+				Log.i(TAG, "tilt " + cur + " -> " + target);
+			} else {
+				tiltDone = true;
+			}
+		} catch (Throwable e) {
+			tiltDone = true;
+			Log.w(TAG, "tilt: " + e);
+		}
+	}
 
 	// Garmin-like cursor: a real 3D vehicle model lying on the road, moving smoothly between fixes
 	private void nmCursor() {
@@ -397,26 +433,38 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			net.osmand.plus.settings.backend.OsmandSettings st = app.getSettings();
 			net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> done =
 					st.registerBooleanPreference("nm_cursor_v1", false).makeGlobal();
-			if (done.get()) {
+			net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> lineDone =
+					st.registerBooleanPreference("nm_route_line_v1", false).makeGlobal();
+			boolean icons = !done.get();
+			boolean line = !lineDone.get();
+			if (!icons && !line) {
 				return;
 			}
-			String nav = modelIfPresent("map_navigation_car");
-			String still = modelIfPresent("map_car_location");
+			String nav = icons ? modelIfPresent("map_navigation_car") : null;
+			String still = icons ? modelIfPresent("map_car_location") : null;
 			for (ApplicationMode m : ApplicationMode.allPossibleValues()) {
 				if (!nmRoadMode(m)) {
 					continue;
 				}
-				if (nav != null) {
-					st.NAVIGATION_ICON.setModeValue(m, nav);
+				if (icons) {
+					if (nav != null) {
+						st.NAVIGATION_ICON.setModeValue(m, nav);
+					}
+					if (still != null) {
+						st.LOCATION_ICON.setModeValue(m, still);
+					}
+					st.ANIMATE_MY_LOCATION.setModeValue(m, true);
+					st.LOCATION_INTERPOLATION_PERCENT.setModeValue(m, 100);
 				}
-				if (still != null) {
-					st.LOCATION_ICON.setModeValue(m, still);
+				if (line) {
+					// wide ribbon with direction arrows, readable in the tilted 3D view
+					st.ROUTE_LINE_WIDTH.setModeValue(m, "14");
+					st.ROUTE_SHOW_TURN_ARROWS.setModeValue(m, true);
 				}
-				st.ANIMATE_MY_LOCATION.setModeValue(m, true);
-				st.LOCATION_INTERPOLATION_PERCENT.setModeValue(m, 100);
 			}
+			lineDone.set(true);
 			done.set(true);
-			Log.i(TAG, "cursor set: " + nav + " / " + still);
+			Log.i(TAG, "cursor set: " + nav + " / " + still + " line=" + line);
 		} catch (Throwable e) {
 			Log.w(TAG, "cursor: " + e);
 		}
