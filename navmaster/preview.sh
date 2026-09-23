@@ -99,7 +99,8 @@ tap_text "mantieni attivo|keep active"; sleep 3
 shot 06_navigazione; texts navigazione
 for i in 1 2 3 4 5 6; do adb emu geo fix 12.47$((9-i)) 43.96$((7-i)); sleep 2; done
 sleep 4; shot 07_navigazione_in_movimento
-tap 816 1659; sleep 5; adb emu geo fix 12.4730 43.9610; sleep 4; shot 07b_vista_3d   # 2D/3D button
+adb emu geo fix 12.4730 43.9610; sleep 4; shot 07b_vista_3d   # tilted 3D view (forced while navigating)
+adb logcat -d -s NavMasterDL:I 2>/dev/null | grep -i "tilt\|cursor set" | tail -5 >> "$INFO"
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1; sleep 6; adb emu geo fix 12.4740 43.9630; sleep 6; shot 08_navigazione_orizzontale
 adb shell settings put system user_rotation 0; sleep 3
