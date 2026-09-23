@@ -40,6 +40,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 
 	private static final int SHOW_DISTANCE_M = 1200;
 	private static final int LANES_DISTANCE_M = 800;
+	private static final int LANE_GREEN = 0xFF2BD46A;
+	private static final int LANE_GREEN_DARK = 0xFF0B7A3B;
+	private static final int LANE_AMBER = 0xFFFFB300;
 	private static final String DEMO_FILE = "navmaster_junction_demo";
 
 	private static final int ROUTE_MAGENTA = 0xFFC2189A;
@@ -89,6 +92,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		int[] lanes;
 		int turn;
 		boolean compact;
+		int showFrom = 800;
 		String exitRef;
 		List<String> destinations = new ArrayList<>();
 		boolean motorway = true;
@@ -239,13 +243,15 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		boolean hasExit = exit != null && !exit.isEmpty();
 		boolean hasLanes = lanes != null && lanes.length >= 2;
 		if (!(hasExit || (slip && (hasLanes || !Algorithms.isEmpty(dest))))) {
-			if (hasLanes && next.distanceTo <= LANES_DISTANCE_M) {
-				// no motorway sign, but the lanes are known: guide the driver with the compact lane strip
+			int showFrom = lanesShowDistance();
+			if (hasLanes && next.distanceTo <= showFrom) {
+				// no motorway sign, but the lanes are known: active lane guidance in the compact strip
 				Junction lj = new Junction();
 				lj.compact = true;
 				lj.distance = next.distanceTo;
 				lj.turn = tt.getValue();
 				lj.lanes = lanes;
+				lj.showFrom = showFrom;
 				return lj;
 			}
 			return null;
@@ -277,6 +283,13 @@ public class JunctionViewLayer extends OsmandMapLayer {
 			j.destinations.add(exit.getExitStreetName());
 		}
 		return j;
+	}
+
+	// lanes appear earlier the faster you drive: 350 m in town, up to 1,2 km on the motorway
+	private int lanesShowDistance() {
+		net.osmand.Location loc = app.getLocationProvider().getLastKnownLocation();
+		float sp = loc != null && loc.hasSpeed() ? loc.getSpeed() : 0;
+		return (int) Math.max(350, Math.min(1200, sp * 22));
 	}
 
 	private static boolean rightSide(int turn) {
@@ -432,54 +445,214 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		}, 80);
 	}
 
-	// compact strip with the lanes in perspective and an animated 3D arrow on the lanes to take
+	// ---------------------------------------------------------- NavMaster active lane guidance
+	// A perspective lane deck: the lanes to take carry an extruded 3D arrow with a light running
+	// along it, the others stay flat and dim. A countdown bar shows how close the manoeuvre is.
 	private void drawLaneStrip(Canvas canvas, RectF strip, Junction j, boolean night) {
 		float r = 16 * dp;
+		boolean urgent = j.distance <= 120;
 		canvas.save();
 		path.reset();
 		path.addRoundRect(strip, r, r, Path.Direction.CW);
 		canvas.clipPath(path);
 		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(null);
 		fill.setColor(0xFFFFFFFF);
-		fill.setShader(new LinearGradient(0, strip.top, 0, strip.bottom, 0xF2222A36, 0xF2121821, Shader.TileMode.CLAMP));
+		fill.setShader(new LinearGradient(0, strip.top, 0, strip.bottom, 0xF61E2632, 0xF60D1218, Shader.TileMode.CLAMP));
 		canvas.drawRect(strip, fill);
 		fill.setShader(null);
 
-		String dist = OsmAndFormatter.getFormattedDistance(j.distance, app);
-		text.setColor(0xFFFFFFFF);
+		float pad = 12 * dp;
+		float barH = 5 * dp;
+		net.osmand.plus.utils.FormattedValue fv = OsmAndFormatter.getFormattedDistanceValue(j.distance, app);
+		float big = Math.min(26 * dp, strip.height() * 0.30f);
 		text.setTextAlign(Paint.Align.LEFT);
-		text.setTextSize(Math.min(22 * dp, strip.height() * 0.26f));
-		canvas.drawText(dist, strip.left + 14 * dp, strip.centerY() + 7 * dp, text);
-		float distW = text.measureText(dist) + 26 * dp;
+		text.setTextSize(big);
+		text.setColor(urgent ? LANE_AMBER : 0xFFFFFFFF);
+		float dx = strip.left + pad;
+		float dy = strip.centerY() + big * 0.16f;
+		canvas.drawText(fv.value, dx, dy, text);
+		float vw = text.measureText(fv.value);
+		text.setTextSize(big * 0.46f);
+		canvas.drawText(fv.unit, dx + vw + 3 * dp, dy, text);
+		float unitW = text.measureText(fv.unit);
+		text.setTextSize(9.5f * dp);
+		text.setColor(0xFF8D98A6);
+		text.setLetterSpacing(0.10f);
+		boolean it = "it".equals(java.util.Locale.getDefault().getLanguage());
+		canvas.drawText(it ? "CORSIE" : "LANES", dx, dy + big * 0.60f, text);
+		text.setLetterSpacing(0f);
+		float distW = Math.max(vw + unitW + 30 * dp, 76 * dp);
+
+		RectF deck = new RectF(strip.left + distW, strip.top + 7 * dp,
+				strip.right - 10 * dp, strip.bottom - 9 * dp - barH);
+		if (deck.width() > 60 * dp && deck.height() > 40 * dp) {
+			drawLaneDeck(canvas, deck, j, urgent);
+		}
+
+		float p = 1f - Math.min(1f, j.distance / (float) Math.max(200, j.showFrom));
+		RectF track = new RectF(strip.left + pad, strip.bottom - barH - 6 * dp, strip.right - pad, strip.bottom - 6 * dp);
+		fill.setColor(0x26FFFFFF);
+		canvas.drawRoundRect(track, barH / 2f, barH / 2f, fill);
+		fill.setColor(j.distance <= 60 ? 0xFFE53935 : urgent ? LANE_AMBER : LANE_GREEN);
+		canvas.drawRoundRect(new RectF(track.left, track.top, track.left + Math.max(barH, track.width() * p), track.bottom),
+				barH / 2f, barH / 2f, fill);
+
+		canvas.restore();
 		stroke.setStyle(Paint.Style.STROKE);
 		stroke.setPathEffect(null);
-		stroke.setColor(0x33FFFFFF);
-		stroke.setStrokeWidth(1 * dp);
-		canvas.drawLine(strip.left + distW, strip.top + 12 * dp, strip.left + distW, strip.bottom - 12 * dp, stroke);
-
-		float lanesL = strip.left + distW + 8 * dp;
-		float lanesR = strip.right - 12 * dp;
-		int n = j.lanes.length;
-		float laneW = Math.min((lanesR - lanesL) / n, 64 * dp);
-		float allW = laneW * n;
-		float startX = (lanesL + lanesR) / 2f - allW / 2f;
-		float baseY = strip.bottom - 12 * dp;
-		float topY = strip.top + 14 * dp;
-		for (int i = 0; i < n; i++) {
-			boolean active = (j.lanes[i] & 1) == 1;
-			int turn = TurnType.getPrimaryTurn(j.lanes[i]);
-			float lcx = startX + (i + 0.5f) * laneW;
-			if (i > 0) {
-				stroke.setColor(0x1AFFFFFF);
-				stroke.setStrokeWidth(1 * dp);
-				canvas.drawLine(startX + i * laneW, baseY + 2 * dp, startX + i * laneW, topY, stroke);
-			}
-			drawTurnArrow(canvas, turn, lcx, baseY, topY, laneW, active, night);
-		}
-		canvas.restore();
 		stroke.setColor(0x66000000);
 		stroke.setStrokeWidth(1.5f * dp);
 		canvas.drawRoundRect(strip, r, r, stroke);
+	}
+
+	private void drawLaneDeck(Canvas canvas, RectF deck, Junction j, boolean urgent) {
+		int n = j.lanes.length;
+		if (n <= 0) {
+			return;
+		}
+		float laneW = Math.min(deck.width() / n, 72 * dp);
+		float allW = laneW * n;
+		float cx = deck.centerX();
+		float left = cx - allW / 2f;
+		float baseY = deck.bottom;
+		float topY = deck.top;
+		float k = 0.82f; // perspective: the far edge is narrower
+
+		// asphalt
+		path.reset();
+		path.moveTo(left, baseY);
+		path.lineTo(left + allW, baseY);
+		path.lineTo(cx + (allW / 2f) * k, topY);
+		path.lineTo(cx - (allW / 2f) * k, topY);
+		path.close();
+		fill.setStyle(Paint.Style.FILL);
+		fill.setColor(0xFFFFFFFF);
+		fill.setShader(new LinearGradient(0, topY, 0, baseY, 0xFF232A34, 0xFF39414D, Shader.TileMode.CLAMP));
+		canvas.drawPath(path, fill);
+		fill.setShader(null);
+
+		// green corridor under the lanes to take
+		for (int i = 0; i < n; i++) {
+			if ((j.lanes[i] & 1) != 1) {
+				continue;
+			}
+			float x0 = left + i * laneW;
+			float x1 = x0 + laneW;
+			path.reset();
+			path.moveTo(x0, baseY);
+			path.lineTo(x1, baseY);
+			path.lineTo(cx + (x1 - cx) * k, topY);
+			path.lineTo(cx + (x0 - cx) * k, topY);
+			path.close();
+			fill.setColor(0xFFFFFFFF);
+			fill.setShader(new LinearGradient(0, topY, 0, baseY,
+					urgent ? 0x14FFB300 : 0x142BD46A, urgent ? 0x4DFFB300 : 0x4D2BD46A, Shader.TileMode.CLAMP));
+			canvas.drawPath(path, fill);
+			fill.setShader(null);
+		}
+
+		// lane separators
+		stroke.setStyle(Paint.Style.STROKE);
+		stroke.setPathEffect(null);
+		stroke.setStrokeCap(Paint.Cap.BUTT);
+		for (int i = 0; i <= n; i++) {
+			float x0 = left + i * laneW;
+			boolean edge = i == 0 || i == n;
+			stroke.setColor(edge ? 0x59FFFFFF : 0x2EFFFFFF);
+			stroke.setStrokeWidth((edge ? 2f : 1.2f) * dp);
+			if (edge) {
+				canvas.drawLine(x0, baseY, cx + (x0 - cx) * k, topY, stroke);
+			} else {
+				stroke.setPathEffect(new android.graphics.DashPathEffect(new float[]{7 * dp, 7 * dp}, 0));
+				canvas.drawLine(x0, baseY, cx + (x0 - cx) * k, topY, stroke);
+				stroke.setPathEffect(null);
+			}
+		}
+
+		// arrows
+		for (int i = 0; i < n; i++) {
+			int lane = j.lanes[i];
+			boolean active = (lane & 1) == 1;
+			float lcx = left + (i + 0.5f) * laneW;
+			int[] turns = laneTurns(lane);
+			for (int t = 0; t < turns.length; t++) {
+				float offset = turns.length == 1 ? 0 : (t - (turns.length - 1) / 2f) * laneW * 0.26f;
+				float scale = turns.length == 1 ? 1f : 0.72f;
+				boolean main = t == 0;
+				drawLaneArrow3d(canvas, turns[t], lcx + offset, baseY - 5 * dp, topY + 4 * dp, laneW * scale,
+						active && main, active && !main, urgent);
+			}
+		}
+		stroke.setStrokeCap(Paint.Cap.BUTT);
+	}
+
+	private static int[] laneTurns(int lane) {
+		int primary = TurnType.getPrimaryTurn(lane);
+		int secondary = TurnType.getSecondaryTurn(lane);
+		int tertiary = TurnType.getTertiaryTurn(lane);
+		if (tertiary != 0 && secondary != 0) {
+			return new int[] {primary, secondary, tertiary};
+		}
+		if (secondary != 0) {
+			return new int[] {primary, secondary};
+		}
+		return new int[] {primary};
+	}
+
+	// tapered arrow with a dark extruded side (3D), a glow and a light running towards the turn
+	private void drawLaneArrow3d(Canvas canvas, int turn, float lcx, float baseY, float topY, float laneW,
+			boolean active, boolean activeAlt, boolean urgent) {
+		double rad = Math.toRadians(turnAngleDeg(turn));
+		float len = baseY - topY;
+		float headLen = Math.min(laneW * 0.55f, len * 0.44f);
+		float reach = len - headLen;
+		float hx = lcx + (float) Math.sin(rad) * reach * 0.92f;
+		float hy = baseY - (float) Math.cos(rad) * reach * 0.94f;
+		if (turn == TurnType.TU || turn == TurnType.TRU) {
+			hy = baseY - reach * 0.38f;
+		}
+		shaft.reset();
+		shaft.moveTo(lcx, baseY);
+		shaft.quadTo(lcx, baseY - reach * 0.58f, hx, hy);
+
+		float speed = urgent ? 2f : 1f;
+		float ph = (animPhase * speed) % 1f;
+		float pulse = active ? 1f + 0.05f * (float) Math.sin(ph * 2 * Math.PI) : 1f;
+		float sw = laneW * (active ? 0.27f : activeAlt ? 0.18f : 0.13f) * pulse;
+		int top = active ? (urgent ? LANE_AMBER : LANE_GREEN)
+				: activeAlt ? 0xCC2BD46A : 0x66FFFFFF;
+		int side = active ? (urgent ? 0xFF8A5A00 : LANE_GREEN_DARK) : 0x33000000;
+
+		stroke.setStyle(Paint.Style.STROKE);
+		stroke.setStrokeCap(Paint.Cap.ROUND);
+		stroke.setStrokeJoin(Paint.Join.ROUND);
+		stroke.setPathEffect(null);
+		if (active) {
+			// soft glow
+			stroke.setColor(urgent ? 0x33FFB300 : 0x332BD46A);
+			stroke.setStrokeWidth(sw * 2.1f);
+			canvas.drawPath(shaft, stroke);
+		}
+		canvas.save();
+		canvas.translate(0, 3.5f * dp);
+		stroke.setColor(side);
+		stroke.setStrokeWidth(sw);
+		canvas.drawPath(shaft, stroke);
+		drawArrowHead(canvas, hx, hy, rad, laneW, side, headLen, sw);
+		canvas.restore();
+		stroke.setColor(top);
+		stroke.setStrokeWidth(sw);
+		canvas.drawPath(shaft, stroke);
+		drawArrowHead(canvas, hx, hy, rad, laneW, top, headLen, sw);
+		if (active) {
+			stroke.setColor(0xCCFFFFFF);
+			stroke.setStrokeWidth(sw * 0.26f);
+			stroke.setPathEffect(new android.graphics.DashPathEffect(new float[]{5 * dp, 12 * dp}, -ph * 17 * dp));
+			canvas.drawPath(shaft, stroke);
+			stroke.setPathEffect(null);
+		}
+		stroke.setStrokeCap(Paint.Cap.BUTT);
 	}
 
 	private static float turnAngleDeg(int turn) {
@@ -498,54 +671,10 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		}
 	}
 
-	// tapered arrow with a dark extruded side (3D look) and a light pulse running along it when the lane is to be taken
-	private void drawTurnArrow(Canvas canvas, int turn, float lcx, float baseY, float topY, float laneW, boolean active,
-			boolean night) {
-		double rad = Math.toRadians(turnAngleDeg(turn));
-		float len = baseY - topY;
-		float headLen = Math.min(laneW * 0.52f, len * 0.42f);
-		float reach = len - headLen;
-		float hx = lcx + (float) Math.sin(rad) * reach * 0.9f;
-		float hy = baseY - (float) Math.cos(rad) * reach * 0.92f;
-		if (turn == TurnType.TU || turn == TurnType.TRU) {
-			hy = baseY - reach * 0.35f;
-		}
-		shaft.reset();
-		shaft.moveTo(lcx, baseY);
-		shaft.quadTo(lcx, baseY - reach * 0.6f, hx, hy);
-		float pulse = active ? 1f + 0.05f * (float) Math.sin(animPhase * 2 * Math.PI) : 1f;
-		float sw = laneW * (active ? 0.24f : 0.13f) * pulse;
-		int top = active ? 0xFF35D06B : (night ? 0x66FFFFFF : 0x77FFFFFF);
-		int side = active ? 0xFF0C6B33 : 0x33000000;
-		stroke.setStyle(Paint.Style.STROKE);
-		stroke.setStrokeCap(Paint.Cap.ROUND);
-		stroke.setStrokeJoin(Paint.Join.ROUND);
-		stroke.setPathEffect(null);
-		canvas.save();
-		canvas.translate(0, 3 * dp);
-		stroke.setColor(side);
-		stroke.setStrokeWidth(sw);
-		canvas.drawPath(shaft, stroke);
-		drawArrowHead(canvas, hx, hy, rad, laneW, side, headLen, sw);
-		canvas.restore();
-		stroke.setColor(top);
-		stroke.setStrokeWidth(sw);
-		canvas.drawPath(shaft, stroke);
-		drawArrowHead(canvas, hx, hy, rad, laneW, top, headLen, sw);
-		if (active) {
-			stroke.setColor(0xAAFFFFFF);
-			stroke.setStrokeWidth(sw * 0.28f);
-			stroke.setPathEffect(new android.graphics.DashPathEffect(new float[]{5 * dp, 11 * dp}, -animPhase * 16 * dp));
-			canvas.drawPath(shaft, stroke);
-			stroke.setPathEffect(null);
-		}
-		stroke.setStrokeCap(Paint.Cap.BUTT);
-	}
-
 	private void drawArrowHead(Canvas canvas, float x, float y, double rad, float laneW, int color, float headLen, float sw) {
 		float dirx = (float) Math.sin(rad);
 		float diry = -(float) Math.cos(rad);
-		float hw = Math.max(sw * 1.35f, laneW * 0.20f);
+		float hw = Math.max(sw * 1.35f, laneW * 0.21f);
 		float tipx = x + dirx * headLen;
 		float tipy = y + diry * headLen;
 		float nx = -diry;
