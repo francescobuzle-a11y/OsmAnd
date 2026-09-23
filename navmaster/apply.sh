@@ -768,6 +768,12 @@ patch(qs, "\t\tsearchUICore.search(text, showQuickResult, new ResultMatcher<Sear
 patch(qs, "\tprivate void runSearch(String text, boolean preserveSelectedPoiTypeNames) {\n\t\tshowProgressBar();",
       "\tprivate void runSearch(String text, boolean preserveSelectedPoiTypeNames) {\n"
       "\t\tnet.osmand.CollatorStringMatcher.NM_FUZZY = false;\n\t\tnmRetry = 0;\n\t\tshowProgressBar();")
+# 29) The 3D vehicle model is capped at 6 dp by OsmAnd, which makes it almost invisible on a
+#     driving screen; a Garmin-sized cursor is what the driver looks for
+patch(os.path.join(S, 'views', 'layers', 'PointLocationLayer.java'),
+      '\tprivate static final int MODEL_3D_MAX_SIZE_DP = 6;',
+      '\tprivate static final int MODEL_3D_MAX_SIZE_DP = 26; // NavMaster: visible vehicle cursor')
+
 print('NavMaster patches applied OK')
 PATCH_EOF
 python3 "$W/gen_assets.py" "$ROOT/resources/rendering_styles/fonts/10_NotoSans-Bold.ttf" "$W"
