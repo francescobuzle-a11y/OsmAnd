@@ -43,6 +43,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 	private static final int LANE_GREEN = 0xFF2BD46A;
 	private static final int LANE_GREEN_DARK = 0xFF0B7A3B;
 	private static final int LANE_AMBER = 0xFFFFB300;
+	/** the route colour: the corridor in the lane panel is the map's route line continuing ahead */
+	private static final int LANE_ROUTE = 0xFFD62BC0;
+	private static final int LANE_ROUTE_DARK = 0xFF6E0F60;
 	private static final String DEMO_FILE = "navmaster_junction_demo";
 
 	private static final int ROUTE_MAGENTA = 0xFFC2189A;
@@ -285,11 +288,12 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		return j;
 	}
 
-	// lanes appear earlier the faster you drive: 350 m in town, up to 1,2 km on the motorway
+	// lanes appear earlier the faster you drive: 400 m in town, up to 1,6 km on the motorway,
+	// so that a truck has time to change lane well before the exit (as on a Garmin)
 	private int lanesShowDistance() {
 		net.osmand.Location loc = app.getLocationProvider().getLastKnownLocation();
 		float sp = loc != null && loc.hasSpeed() ? loc.getSpeed() : 0;
-		return (int) Math.max(350, Math.min(1200, sp * 22));
+		return (int) Math.max(400, Math.min(1600, sp * 40));
 	}
 
 	private static boolean rightSide(int turn) {
@@ -547,7 +551,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 			path.close();
 			fill.setColor(0xFFFFFFFF);
 			fill.setShader(new LinearGradient(0, topY, 0, baseY,
-					urgent ? 0x14FFB300 : 0x142BD46A, urgent ? 0x4DFFB300 : 0x4D2BD46A, Shader.TileMode.CLAMP));
+					urgent ? 0x1AFFB300 : 0x1AD62BC0, urgent ? 0x59FFB300 : 0x66D62BC0, Shader.TileMode.CLAMP));
 			canvas.drawPath(path, fill);
 			fill.setShader(null);
 		}
@@ -640,9 +644,9 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		float ph = (animPhase * speed) % 1f;
 		float pulse = active ? 1f + 0.05f * (float) Math.sin(ph * 2 * Math.PI) : 1f;
 		float sw = laneW * (active ? 0.27f : activeAlt ? 0.18f : 0.13f) * pulse;
-		int top = active ? (urgent ? LANE_AMBER : LANE_GREEN)
-				: activeAlt ? 0xCC2BD46A : 0x66FFFFFF;
-		int side = active ? (urgent ? 0xFF8A5A00 : LANE_GREEN_DARK) : 0x33000000;
+		int top = active ? (urgent ? LANE_AMBER : LANE_ROUTE)
+				: activeAlt ? 0xCCD62BC0 : 0x66FFFFFF;
+		int side = active ? (urgent ? 0xFF8A5A00 : LANE_ROUTE_DARK) : 0x33000000;
 
 		stroke.setStyle(Paint.Style.STROKE);
 		stroke.setStrokeCap(Paint.Cap.ROUND);
@@ -650,7 +654,7 @@ public class JunctionViewLayer extends OsmandMapLayer {
 		stroke.setPathEffect(null);
 		if (active) {
 			// soft glow
-			stroke.setColor(urgent ? 0x33FFB300 : 0x332BD46A);
+			stroke.setColor(urgent ? 0x33FFB300 : 0x44D62BC0);
 			stroke.setStrokeWidth(sw * 2.1f);
 			canvas.drawPath(shaft, stroke);
 		}
