@@ -129,6 +129,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	public void initLayer(@NonNull OsmandMapTileView view) {
 		super.initLayer(view);
 		app = getApplication();
+		nmInstance = this;
 		dp = app.getResources().getDisplayMetrics().density;
 		stroke.setStyle(Paint.Style.STROKE);
 		text.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
@@ -419,7 +420,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 					view.setElevationAngle(target);
 					view.refreshMap();
 				});
-				Log.i(TAG, "tilt " + cur + " -> " + target);
+				Log.i(TAG, "tilt " + cur + " -> " + target + " renderer=" + (view.getMapRenderer() != null)
+						+ " opengl=" + app.useOpenGlRenderer());
 			} else {
 				tiltDone = true;
 			}
@@ -711,6 +713,21 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	}
 
 	// ---------------------------------------------------------------- arrival satellite panel
+
+	/** shared with JunctionViewLayer, which draws the bird's eye view of the next interchange */
+	public static volatile NavMasterDriverLayer nmInstance;
+
+	public Bitmap nmSatTile(int z, int x, int y) {
+		return getTile(z, x, y);
+	}
+
+	public static double nmTileX(double lon, int z) {
+		return tileX(lon, z);
+	}
+
+	public static double nmTileY(double lat, int z) {
+		return tileY(lat, z);
+	}
 
 	private static double tileX(double lon, int z) {
 		return (lon + 180.0) / 360.0 * (1 << z);
@@ -1139,12 +1156,18 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				x += size + 12 * dp;
 			}
 		}
+		// Garmin-like lane assist: all the lanes of the road, the ones to take highlighted
+		float laneChip = 0;
+		int[] assist = laneAssistLanes(next);
+		if (assist != null) {
+			laneChip = drawLaneAssist(c, bar, assist);
+		}
 		String name = nextRoadName(next);
 		if (!Algorithms.isEmpty(name)) {
 			text.setTextAlign(Paint.Align.LEFT);
 			text.setColor(0xFFFFFFFF);
 			text.setTextSize(barH * 0.33f);
-			float maxW = bar.right - 14 * dp - x;
+			float maxW = bar.right - 14 * dp - laneChip - x;
 			String sName = name;
 			if (text.measureText(sName) > maxW) {
 				while (sName.length() > 2 && text.measureText(sName + "\u2026") > maxW) {
@@ -1157,6 +1180,100 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		nmTopBar = new RectF(bar);
 		placed.add(new RectF(bar));
 		return bar.bottom;
+	}
+
+	/** lanes of the road ahead, as long as the manoeuvre is close enough to matter */
+	private int[] laneAssistLanes(net.osmand.plus.routing.NextDirectionInfo next) {
+		try {
+			if (next == null || next.directionInfo == null) {
+				return null;
+			}
+			net.osmand.router.TurnType tt = next.directionInfo.getTurnType();
+			if (tt == null) {
+				return null;
+			}
+			int[] lanes = tt.getLanes();
+			if (lanes == null || lanes.length < 2) {
+				return null;
+			}
+			Location loc = app.getLocationProvider().getLastKnownLocation();
+			float sp = loc != null && loc.hasSpeed() ? loc.getSpeed() : 0;
+			int show = (int) Math.max(400, Math.min(1600, sp * 40));
+			return next.distanceTo <= show ? lanes : null;
+		} catch (Throwable e) {
+			return null;
+		}
+	}
+
+	/** small row of lane arrows at the right end of the green bar; returns the width it took */
+	private float drawLaneAssist(Canvas c, RectF bar, int[] lanes) {
+		int n = Math.min(lanes.length, 8);
+		float cell = 17 * dp;
+		float pad = 6 * dp;
+		float chipW = n * cell + pad * 2;
+		float chipH = bar.height() - 14 * dp;
+		RectF chip = new RectF(bar.right - 12 * dp - chipW, bar.centerY() - chipH / 2f,
+				bar.right - 12 * dp, bar.centerY() + chipH / 2f);
+		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(null);
+		fill.setColor(0x4D000000);
+		c.drawRoundRect(chip, 9 * dp, 9 * dp, fill);
+		for (int i = 0; i < n; i++) {
+			int lane = lanes[i];
+			boolean active = (lane & 1) == 1;
+			float cx = chip.left + pad + (i + 0.5f) * cell;
+			drawMiniArrow(c, cx, chip.bottom - 5 * dp, chipH - 10 * dp,
+					net.osmand.router.TurnType.getPrimaryTurn(lane), active);
+		}
+		return chipW + 12 * dp;
+	}
+
+	private void drawMiniArrow(Canvas c, float cx, float bottom, float size, int turn, boolean active) {
+		double rad = Math.toRadians(laneAngle(turn));
+		float bendY = bottom - size * 0.45f;
+		float tipX = cx + (float) Math.sin(rad) * size * 0.40f;
+		float tipY = bendY - (float) Math.cos(rad) * size * 0.40f;
+		int col = active ? 0xFFFFFFFF : 0x59FFFFFF;
+		stroke.setStyle(Paint.Style.STROKE);
+		stroke.setStrokeWidth(size * (active ? 0.17f : 0.13f));
+		stroke.setStrokeCap(Paint.Cap.ROUND);
+		stroke.setStrokeJoin(Paint.Join.ROUND);
+		stroke.setPathEffect(null);
+		stroke.setColor(col);
+		path.reset();
+		path.moveTo(cx, bottom);
+		path.lineTo(cx, bendY);
+		path.lineTo(tipX, tipY);
+		c.drawPath(path, stroke);
+		float dx = (float) Math.sin(rad);
+		float dy = -(float) Math.cos(rad);
+		float hw = size * 0.20f;
+		float hl = size * 0.26f;
+		path.reset();
+		path.moveTo(tipX + dx * hl, tipY + dy * hl);
+		path.lineTo(tipX - dy * hw, tipY + dx * hw);
+		path.lineTo(tipX + dy * hw, tipY - dx * hw);
+		path.close();
+		fill.setStyle(Paint.Style.FILL);
+		fill.setShader(null);
+		fill.setColor(col);
+		c.drawPath(path, fill);
+	}
+
+	private static float laneAngle(int turn) {
+		switch (turn) {
+			case net.osmand.router.TurnType.KL: return -18;
+			case net.osmand.router.TurnType.KR: return 18;
+			case net.osmand.router.TurnType.TSLL: return -40;
+			case net.osmand.router.TurnType.TSLR: return 40;
+			case net.osmand.router.TurnType.TL: return -78;
+			case net.osmand.router.TurnType.TR: return 78;
+			case net.osmand.router.TurnType.TSHL: return -108;
+			case net.osmand.router.TurnType.TSHR: return 108;
+			case net.osmand.router.TurnType.TU: return -155;
+			case net.osmand.router.TurnType.TRU: return 155;
+			default: return 0;
+		}
 	}
 
 	private String nextRoadName(net.osmand.plus.routing.NextDirectionInfo next) {
