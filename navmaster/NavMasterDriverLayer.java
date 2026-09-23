@@ -214,7 +214,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 				float bl = mapLeft + (landscape ? 76 : 140) * dp;
 				float br = mapRight - (landscape ? 10 * dp : 150 * dp);
 				RectF banner = new RectF(bl, bannerTop, Math.min(br, bl + 330 * dp), bannerTop + 38 * dp);
-				RectF fb = nmFit(banner, obstacles(), 170 * dp, 34 * dp, 6 * dp);
+				RectF fb = nmFit(banner, obstacles(), 130 * dp, 34 * dp, 6 * dp);
 				if (fb != null) {
 					banner = fb;
 					banner.bottom = banner.top + 38 * dp;
@@ -596,10 +596,20 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			text.setTextSize(ts);
 		}
 		if (text.measureText(main) > avail) {
-			while (main.length() > 2 && text.measureText(main + "\u2026") > avail) {
-				main = main.substring(0, main.length() - 1);
+			// tight spot: the sign already says what the limit is, so keep only its value
+			java.util.regex.Matcher mt = java.util.regex.Pattern.compile("[0-9][0-9.,]*\\s*[a-zA-Z]+").matcher(main);
+			String value = null;
+			while (mt.find()) {
+				value = mt.group();
 			}
-			main = main + "\u2026";
+			if (value != null && text.measureText(value) <= avail) {
+				main = value;
+			} else {
+				while (main.length() > 2 && text.measureText(main + "\u2026") > avail) {
+					main = main.substring(0, main.length() - 1);
+				}
+				main = main + "\u2026";
+			}
 		}
 		text.setColor(Color.WHITE);
 		c.drawText(main, tx, r.centerY() + ts * 0.36f, text);
