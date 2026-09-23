@@ -772,7 +772,7 @@ patch(qs, "\tprivate void runSearch(String text, boolean preserveSelectedPoiType
 #     driving screen; a Garmin-sized cursor is what the driver looks for
 patch(os.path.join(S, 'views', 'layers', 'PointLocationLayer.java'),
       '\tprivate static final int MODEL_3D_MAX_SIZE_DP = 6;',
-      '\tprivate static final int MODEL_3D_MAX_SIZE_DP = 26; // NavMaster: visible vehicle cursor')
+      '\tprivate static final int MODEL_3D_MAX_SIZE_DP = 10; // NavMaster: visible vehicle cursor')
 
 print('NavMaster patches applied OK')
 PATCH_EOF
