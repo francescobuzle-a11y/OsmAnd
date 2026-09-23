@@ -65,7 +65,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private static final int RESTRICTION_LOOKAHEAD_M = 5000;
 	private static final int ROUTE_MAGENTA = 0xFFC2189A;
 	/** camera tilt while navigating (90 = flat map seen from above, like OsmAnd's default) */
-	private static final float NM_TILT = 45f;
+	private static final float NM_TILT = 33f;
 	private static final int BANNER_RED = 0xFFC62828;
 	private static final String REPORT_CATEGORY = "NavMaster segnalazioni";
 	// Esri World Imagery (attribution shown on the panel)
@@ -391,6 +391,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	private boolean cursorSet;
 	private boolean wasNavigating;
 	private boolean tiltDone;
+	private int tiltTries;
 	private long lastTilt;
 
 	/** Garmin-like camera: while following a route the map is tilted, whatever started the navigation. */
@@ -398,6 +399,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		if (navigating != wasNavigating) {
 			wasNavigating = navigating;
 			tiltDone = false;
+			tiltTries = 0;
 		}
 		if (!navigating || tiltDone || view == null) {
 			return;
@@ -410,9 +412,13 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		try {
 			float target = Math.min(app.getSettings().getLastKnownMapElevation(), NM_TILT);
 			float cur = view.getElevationAngle();
-			if (cur > target + 2f) {
+			if (cur > target + 2f && tiltTries++ < 20) {
 				app.getSettings().setLastKnownMapElevation(target);
-				view.getAnimatedDraggingThread().startTilting(target, 0);
+				// straight to the renderer: the tilt animation is dropped while the map follows the car
+				view.getView().post(() -> {
+					view.setElevationAngle(target);
+					view.refreshMap();
+				});
 				Log.i(TAG, "tilt " + cur + " -> " + target);
 			} else {
 				tiltDone = true;
