@@ -151,6 +151,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			boolean navigating = rh.isFollowingMode() && rh.isRouteCalculated();
 			boolean road = nmRoadMode(app.getSettings().getApplicationMode());
 			nmMigrate();
+			nmCursor();
 			enforceNoPoiVoice();
 			scanHud(w, h);
 			placed.clear();
@@ -382,6 +383,54 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	}
 
 	private boolean migrated;
+	private boolean cursorSet;
+
+	// Garmin-like cursor: a real 3D vehicle model lying on the road, moving smoothly between fixes
+	private void nmCursor() {
+		if (cursorSet) {
+			return;
+		}
+		cursorSet = true;
+		try {
+			net.osmand.plus.settings.backend.OsmandSettings st = app.getSettings();
+			net.osmand.plus.settings.backend.preferences.CommonPreference<Boolean> done =
+					st.registerBooleanPreference("nm_cursor_v1", false).makeGlobal();
+			if (done.get()) {
+				return;
+			}
+			String nav = modelIfPresent("map_navigation_car");
+			String still = modelIfPresent("map_car_location");
+			for (ApplicationMode m : ApplicationMode.allPossibleValues()) {
+				if (!nmRoadMode(m)) {
+					continue;
+				}
+				if (nav != null) {
+					st.NAVIGATION_ICON.setModeValue(m, nav);
+				}
+				if (still != null) {
+					st.LOCATION_ICON.setModeValue(m, still);
+				}
+				st.ANIMATE_MY_LOCATION.setModeValue(m, true);
+				st.LOCATION_INTERPOLATION_PERCENT.setModeValue(m, 100);
+			}
+			done.set(true);
+			Log.i(TAG, "cursor set: " + nav + " / " + still);
+		} catch (Throwable e) {
+			Log.w(TAG, "cursor: " + e);
+		}
+	}
+
+	private String modelIfPresent(String name) {
+		try {
+			java.io.File dir = new java.io.File(app.getAppPath(net.osmand.IndexConstants.MODEL_3D_DIR), name);
+			if (net.osmand.plus.helpers.Model3dHelper.isModelExist(dir)) {
+				return net.osmand.IndexConstants.MODEL_NAME_PREFIX + name;
+			}
+		} catch (Throwable e) {
+			Log.w(TAG, "model " + name + ": " + e);
+		}
+		return null;
+	}
 
 	// one-time clean-up: no POI voice announcements / top POI bar, NavMaster keeps its own POI categories
 	private void nmMigrate() {
@@ -853,7 +902,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			return;
 		}
 		float rx = Math.max(0.2f, Math.min(0.8f, ((l + r) / 2f) / w));
-		float ry = Math.max(0.25f, Math.min(0.85f, (t + (b - t) * 0.68f) / h));
+		float ry = Math.max(0.25f, Math.min(0.85f, (t + (b - t) * 0.72f) / h));
 		if (Math.abs(rx - ratioX) < 0.02f && Math.abs(ry - ratioY) < 0.02f) {
 			return;
 		}
