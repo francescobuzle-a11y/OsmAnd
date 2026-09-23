@@ -1217,7 +1217,7 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 	/** small row of lane arrows at the right end of the green bar; returns the width it took */
 	private float drawLaneAssist(Canvas c, RectF bar, int[] lanes) {
 		int n = Math.min(lanes.length, 8);
-		float cell = 17 * dp;
+		float cell = 19 * dp;
 		float pad = 6 * dp;
 		float chipW = n * cell + pad * 2;
 		float chipH = bar.height() - 14 * dp;
@@ -1231,17 +1231,31 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 			int lane = lanes[i];
 			boolean active = (lane & 1) == 1;
 			float cx = chip.left + pad + (i + 0.5f) * cell;
-			drawMiniArrow(c, cx, chip.bottom - 5 * dp, chipH - 10 * dp,
+			drawMiniArrow(c, cx, chip.bottom - 5 * dp, chipH - 10 * dp, cell,
 					net.osmand.router.TurnType.getPrimaryTurn(lane), active);
 		}
 		return chipW + 12 * dp;
 	}
 
-	private void drawMiniArrow(Canvas c, float cx, float bottom, float size, int turn, boolean active) {
+	private void drawMiniArrow(Canvas c, float cx, float bottom, float size, float cell, int turn, boolean active) {
 		double rad = Math.toRadians(laneAngle(turn));
+		float sinA = Math.abs((float) Math.sin(rad));
+		float cosA = Math.abs((float) Math.cos(rad));
+		float reach = size * 0.40f;
+		float headLen = size * 0.26f;
+		float hw = size * 0.20f;
+		// a turn arrow must stay inside its own cell, or it runs over the neighbouring lane
+		float lateral = sinA * (reach + headLen) + hw * cosA;
+		float maxSide = cell * 0.46f;
+		if (lateral > maxSide) {
+			float f = Math.max(0.3f, maxSide / lateral);
+			reach *= f;
+			headLen *= f;
+			hw *= Math.max(0.6f, f);
+		}
 		float bendY = bottom - size * 0.45f;
-		float tipX = cx + (float) Math.sin(rad) * size * 0.40f;
-		float tipY = bendY - (float) Math.cos(rad) * size * 0.40f;
+		float tipX = cx + (float) Math.sin(rad) * reach;
+		float tipY = bendY - (float) Math.cos(rad) * reach;
 		int col = active ? 0xFFFFFFFF : 0x59FFFFFF;
 		stroke.setStyle(Paint.Style.STROKE);
 		stroke.setStrokeWidth(size * (active ? 0.17f : 0.13f));
@@ -1256,10 +1270,8 @@ public class NavMasterDriverLayer extends OsmandMapLayer {
 		c.drawPath(path, stroke);
 		float dx = (float) Math.sin(rad);
 		float dy = -(float) Math.cos(rad);
-		float hw = size * 0.20f;
-		float hl = size * 0.26f;
 		path.reset();
-		path.moveTo(tipX + dx * hl, tipY + dy * hl);
+		path.moveTo(tipX + dx * headLen, tipY + dy * headLen);
 		path.lineTo(tipX - dy * hw, tipY + dx * hw);
 		path.lineTo(tipX + dy * hw, tipY - dx * hw);
 		path.close();
